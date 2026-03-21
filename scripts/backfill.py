@@ -13,7 +13,7 @@ def get(path, params=None):
     r.raise_for_status()
     return r.json()
 
-def get_all_pages(path, page_size=288):
+def get_all_pages(path, page_size=500):
     results, page = [], 1
     while True:
         data = get(path, {"page": page, "pageSize": page_size})
@@ -31,24 +31,32 @@ def get_serial():
 def fetch_day(serial, day):
     date_str = day.isoformat()
     out = DATA_DIR / f"{date_str}.json"
-    if out.exists():
-        print(f"  {date_str} exists — skipping")
-        return date_str
     print(f"  Fetching {date_str}...", end=" ", flush=True)
     points_raw = get_all_pages(f"/inverter/{serial}/data-points/{date_str}")
-    points = [{"t": p.get("time",""), "pv": (p.get("solar")or{}).get("power",0),
-                "cons": p.get("consumption",0), "bat": (p.get("battery")or{}).get("power",0),
-                "soc": (p.get("battery")or{}).get("percent",None),
-                "grid": (p.get("grid")or{}).get("power",0)} for p in points_raw]
+    points = []
+    for p in points_raw:
+        pwr = p.get("power") or {}
+        points.append({
+            "t":    p.get("time", ""),
+            "pv":   (pwr.get("solar") or {}).get("power", 0) or 0,
+            "cons": (pwr.get("consumption") or {}).get("power", 0) or 0,
+            "bat":  (pwr.get("battery") or {}).get("power", 0) or 0,
+            "soc":  (pwr.get("battery") or {}).get("percent", None),
+            "grid": (pwr.get("grid") or {}).get("power", 0) or 0,
+            "temp": (pwr.get("inverter") or {}).get("temperature", None),
+        })
     try:
-        ef = get(f"/inverter/{serial}/energy-flows/{date_str}", params={"start_time":"00:00","end_time":"23:59","grouping":30})
-        flows = [{"t": e.get("start_time",""), "pv_h": e.get("pv_to_house",0), "grid_h": e.get("grid_to_house",0),
-                  "bat_h": e.get("battery_to_house",0), "pv_g": e.get("pv_to_grid",0),
-                  "pv_b": e.get("pv_to_battery",0), "bat_g": e.get("battery_to_grid",0)} for e in ef.get("data",[])]
+        ef = get(f"/inverter/{serial}/energy-flows/{date_str}",
+                 params={"start_time":"00:00","end_time":"23:59","grouping":30})
+        flows = [{"t": e.get("start_time",""), "pv_h": e.get("pv_to_house",0),
+                  "grid_h": e.get("grid_to_house",0), "bat_h": e.get("battery_to_house",0),
+                  "pv_g": e.get("pv_to_grid",0), "pv_b": e.get("pv_to_battery",0),
+                  "bat_g": e.get("battery_to_grid",0)} for e in ef.get("data",[])]
     except: flows = []
     try: totals = get(f"/inverter/{serial}/energy/{date_str}").get("data", {})
     except: totals = {}
-    payload = {"date": date_str, "serial": serial, "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    payload = {"date": date_str, "serial": serial,
+               "fetched_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                "data_points": points, "energy_flows": flows, "totals": totals}
     out.write_text(json.dumps(payload, separators=(",",":")))
     print(f"{len(points)} pts")
