@@ -1,4 +1,4 @@
-const DATA_BASE = "../data";
+const DATA_BASE = "data";
 const COLORS = {
   solar:"#f59e0b",consumption:"#f43f5e",battery:"#10b981",
   grid:"#3b82f6",export:"#8b5cf6",charge:"#06b6d4",
