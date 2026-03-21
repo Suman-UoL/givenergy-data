@@ -29,8 +29,6 @@ jobs:
           git config user.name "givenergy-bot"
           git config user.email "bot@givenergy-data"
           git add data/
-          git diff --cached --quiet && echo "No changes" || (
-            git pull --rebase &&
-            git commit -m "chore: data update $(date -u '+%Y-%m-%d %H:%M UTC')" &&
+          git diff --cached --quiet && echo "No changes" || \
+            git commit -m "chore: data update $(date -u '+%Y-%m-%d %H:%M UTC')" && \
             git push
-          )
