@@ -1,0 +1,41 @@
+name: Backfill Historical Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: 'Start date (YYYY-MM-DD)'
+        required: true
+        default: '2024-01-01'
+      end_date:
+        description: 'End date (YYYY-MM-DD)'
+        required: true
+        default: '2026-03-20'
+
+permissions:
+  contents: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Run backfill
+        env:
+          GIVENERGY_API_KEY: ${{ secrets.GIVENERGY_API_KEY }}
+        run: python scripts/backfill.py ${{ inputs.start_date }} ${{ inputs.end_date }}
+      - name: Commit data
+        run: |
+          git config user.name "givenergy-bot"
+          git config user.email "bot@givenergy-data"
+          git add data/
+          git diff --cached --quiet && echo "No changes" || \
+            git commit -m "chore: backfill ${{ inputs.start_date }} to ${{ inputs.end_date }}" && \
+            git push
