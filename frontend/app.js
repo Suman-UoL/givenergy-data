@@ -80,10 +80,10 @@ async function renderDay(dateStr){
   catch(e){showError(`No data for ${dateStr} yet. The fetcher runs every 30 minutes — check back soon.`);return;}
   const pts=day.data_points||[];
   const flows=day.energy_flows||[];
-  const totalSolar=getTotal(day,"solar_generated",d=>sumFlow(getDayFlows(d),"pv_h")+sumFlow(getDayFlows(d),"pv_g")+sumFlow(getDayFlows(d),"pv_b"));
-  const totalConsumed=getTotal(day,"consumption",d=>sumFlow(getDayFlows(d),"pv_h")+sumFlow(getDayFlows(d),"grid_h")+sumFlow(getDayFlows(d),"bat_h"));
-  const totalExported=getTotal(day,"grid_export",d=>sumFlow(getDayFlows(d),"pv_g")+sumFlow(getDayFlows(d),"bat_g"));
-  const totalImported=getTotal(day,"grid_import",d=>sumFlow(getDayFlows(d),"grid_h"));
+  const totalSolar=(day.data_points||[]).reduce((a,p)=>a+(p.pv||0),0)*5/60/1000;
+  const totalConsumed=(day.data_points||[]).reduce((a,p)=>a+(p.cons||0),0)*5/60/1000;
+  const totalExported=(day.data_points||[]).reduce((a,p)=>a+Math.max(0,-(p.grid||0)),0)*5/60/1000;
+  const totalImported=(day.data_points||[]).reduce((a,p)=>a+Math.max(0,(p.grid||0)),0)*5/60/1000;
   const selfSuffPct=totalConsumed>0?Math.min(100,((totalConsumed-totalImported)/totalConsumed)*100):0;
   let peakSolar=0,peakTime="";
   for(const p of pts){if((p.pv||0)>peakSolar){peakSolar=p.pv;peakTime=shortTime(p.t);}}
