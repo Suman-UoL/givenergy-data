@@ -31,13 +31,15 @@ jobs:
         env:
           GIVENERGY_API_KEY: ${{ secrets.GIVENERGY_API_KEY }}
         run: python scripts/backfill.py ${{ inputs.start_date }} ${{ inputs.end_date }}
-      - name: Commit data
+      - name: Commit and push data
         run: |
           git config user.name "givenergy-bot"
           git config user.email "bot@givenergy-data"
           git add data/
-          git diff --cached --quiet && echo "No changes" || (
-            git pull --rebase &&
-            git commit -m "chore: backfill ${{ inputs.start_date }} to ${{ inputs.end_date }}" &&
+          git stash
+          git pull --rebase
+          git stash pop
+          git add data/
+          git diff --cached --quiet && echo "No changes" || \
+            git commit -m "chore: backfill ${{ inputs.start_date }} to ${{ inputs.end_date }}" && \
             git push
-          )
