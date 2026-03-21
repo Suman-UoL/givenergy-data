@@ -1,0 +1,34 @@
+name: Fetch GivEnergy Data
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install requests
+      - name: Run fetcher
+        env:
+          GIVENERGY_API_KEY: ${{ secrets.GIVENERGY_API_KEY }}
+        run: python scripts/fetch.py
+      - name: Commit data
+        run: |
+          git config user.name "givenergy-bot"
+          git config user.email "bot@givenergy-data"
+          git add data/
+          git diff --cached --quiet && echo "No changes" || \
+            git commit -m "chore: data update $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git push
