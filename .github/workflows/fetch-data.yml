@@ -15,7 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -29,6 +29,8 @@ jobs:
           git config user.name "givenergy-bot"
           git config user.email "bot@givenergy-data"
           git add data/
-          git diff --cached --quiet && echo "No changes" || \
-            git commit -m "chore: data update $(date -u '+%Y-%m-%d %H:%M UTC')"
-          git push
+          git diff --cached --quiet && echo "No changes" || (
+            git pull --rebase &&
+            git commit -m "chore: data update $(date -u '+%Y-%m-%d %H:%M UTC')" &&
+            git push
+          )
