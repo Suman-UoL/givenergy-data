@@ -6,7 +6,7 @@ on:
       start_date:
         description: 'Start date (YYYY-MM-DD)'
         required: true
-        default: '2024-01-01'
+        default: '2023-11-21'
       end_date:
         description: 'End date (YYYY-MM-DD)'
         required: true
@@ -18,7 +18,7 @@ permissions:
 jobs:
   backfill:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
         with:
