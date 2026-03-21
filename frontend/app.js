@@ -4,6 +4,80 @@ const COLORS = {
   grid:"#3b82f6",export:"#8b5cf6",charge:"#06b6d4",
   muted:"#64748b",border:"#1a2540",text:"#e2e8f0"
 };
+
+// Calculate kWh from data points using actual time intervals
+function calcKwh(pts, key) {
+  if (!pts || pts.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dt = (new Date(pts[i].t) - new Date(pts[i-1].t)) / 3600000; // hours
+    if (dt > 0 && dt < 0.5) { // ignore gaps > 30 min
+      total += Math.abs(pts[i][key] || 0) * dt;
+    }
+  }
+  return total / 1000; // W to kWh
+}
+function calcKwhPositive(pts, key) {
+  if (!pts || pts.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dt = (new Date(pts[i].t) - new Date(pts[i-1].t)) / 3600000;
+    if (dt > 0 && dt < 0.5) {
+      const v = pts[i][key] || 0;
+      if (v > 0) total += v * dt;
+    }
+  }
+  return total / 1000;
+}
+function calcKwhNegative(pts, key) {
+  if (!pts || pts.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dt = (new Date(pts[i].t) - new Date(pts[i-1].t)) / 3600000;
+    if (dt > 0 && dt < 0.5) {
+      const v = pts[i][key] || 0;
+      if (v < 0) total += Math.abs(v) * dt;
+    }
+  }
+  return total / 1000;
+}
+
+// Calculate kWh from data points using actual time intervals
+function calcKwh(pts, key) {
+  if (!pts || pts.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dt = (new Date(pts[i].t) - new Date(pts[i-1].t)) / 3600000; // hours
+    if (dt > 0 && dt < 0.5) { // ignore gaps > 30 min
+      total += Math.abs(pts[i][key] || 0) * dt;
+    }
+  }
+  return total / 1000; // W to kWh
+}
+function calcKwhPositive(pts, key) {
+  if (!pts || pts.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dt = (new Date(pts[i].t) - new Date(pts[i-1].t)) / 3600000;
+    if (dt > 0 && dt < 0.5) {
+      const v = pts[i][key] || 0;
+      if (v > 0) total += v * dt;
+    }
+  }
+  return total / 1000;
+}
+function calcKwhNegative(pts, key) {
+  if (!pts || pts.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const dt = (new Date(pts[i].t) - new Date(pts[i-1].t)) / 3600000;
+    if (dt > 0 && dt < 0.5) {
+      const v = pts[i][key] || 0;
+      if (v < 0) total += Math.abs(v) * dt;
+    }
+  }
+  return total / 1000;
+}
 Chart.defaults.color=COLORS.muted;
 Chart.defaults.borderColor=COLORS.border;
 Chart.defaults.font.family="'JetBrains Mono',monospace";
@@ -80,10 +154,10 @@ async function renderDay(dateStr){
   catch(e){showError(`No data for ${dateStr} yet. The fetcher runs every 30 minutes — check back soon.`);return;}
   const pts=day.data_points||[];
   const flows=day.energy_flows||[];
-  const totalSolar=(day.data_points||[]).reduce((a,p)=>a+(p.pv||0),0)*5/60/1000;
-  const totalConsumed=(day.data_points||[]).reduce((a,p)=>a+(p.cons||0),0)*5/60/1000;
-  const totalExported=(day.data_points||[]).reduce((a,p)=>a+Math.max(0,-(p.grid||0)),0)*5/60/1000;
-  const totalImported=(day.data_points||[]).reduce((a,p)=>a+Math.max(0,(p.grid||0)),0)*5/60/1000;
+  const totalSolar=calcKwh(day.data_points,"pv");
+  const totalConsumed=calcKwh(day.data_points,"cons");
+  const totalExported=calcKwhNegative(day.data_points,"grid");
+  const totalImported=calcKwhPositive(day.data_points,"grid");
   const selfSuffPct=totalConsumed>0?Math.min(100,((totalConsumed-totalImported)/totalConsumed)*100):0;
   let peakSolar=0,peakTime="";
   for(const p of pts){if((p.pv||0)>peakSolar){peakSolar=p.pv;peakTime=shortTime(p.t);}}
@@ -124,10 +198,10 @@ async function renderWeek(anchorDate){
   const dates=Array.from({length:7},(_,i)=>addDays(anchorDate,-6+i));
   const days=await loadManyDays(dates);
   const labels=dates.map(d=>d.slice(5));
-  const solar=dates.map(d=>getTotal(days[d],"solar_generated",d=>sumFlow(getDayFlows(d),"pv_h")));
-  const consumed=dates.map(d=>getTotal(days[d],"consumption",d=>sumFlow(getDayFlows(d),"pv_h")+sumFlow(getDayFlows(d),"grid_h")+sumFlow(getDayFlows(d),"bat_h")));
-  const imported=dates.map(d=>getTotal(days[d],"grid_import",d=>sumFlow(getDayFlows(d),"grid_h")));
-  const exported=dates.map(d=>getTotal(days[d],"grid_export",d=>sumFlow(getDayFlows(d),"pv_g")+sumFlow(getDayFlows(d),"bat_g")));
+  const solar=dates.map(d=>days[d]?calcKwh(days[d].data_points,"pv"):0);
+  const consumed=dates.map(d=>days[d]?calcKwh(days[d].data_points,"cons"):0);
+  const imported=dates.map(d=>days[d]?calcKwhPositive(days[d].data_points,"grid"):0);
+  const exported=dates.map(d=>days[d]?calcKwhNegative(days[d].data_points,"grid"):0);
   const selfSuff=dates.map((_,i)=>consumed[i]>0?Math.min(100,((consumed[i]-imported[i])/consumed[i])*100):0);
   mkChart("chart-week",{type:"bar",data:{labels,datasets:[
     barDs("Solar",solar,COLORS.solar),
@@ -149,10 +223,10 @@ async function renderMonth(anchorDate){
   const dates=Array.from({length:daysInMonth},(_,i)=>`${year}-${pad(month+1)}-${pad(i+1)}`).filter(d=>d<=isoToday());
   const days=await loadManyDays(dates);
   const labels=dates.map(d=>d.slice(8));
-  const solar=dates.map(d=>getTotal(days[d],"solar_generated",d=>sumFlow(getDayFlows(d),"pv_h")));
-  const consumed=dates.map(d=>getTotal(days[d],"consumption",d=>sumFlow(getDayFlows(d),"pv_h")+sumFlow(getDayFlows(d),"grid_h")+sumFlow(getDayFlows(d),"bat_h")));
-  const exported=dates.map(d=>getTotal(days[d],"grid_export",d=>sumFlow(getDayFlows(d),"pv_g")+sumFlow(getDayFlows(d),"bat_g")));
-  const imported=dates.map(d=>getTotal(days[d],"grid_import",d=>sumFlow(getDayFlows(d),"grid_h")));
+  const solar=dates.map(d=>days[d]?calcKwh(days[d].data_points,"pv"):0);
+  const consumed=dates.map(d=>days[d]?calcKwh(days[d].data_points,"cons"):0);
+  const exported=dates.map(d=>days[d]?calcKwhNegative(days[d].data_points,"grid"):0);
+  const imported=dates.map(d=>days[d]?calcKwhPositive(days[d].data_points,"grid"):0);
   mkChart("chart-month",{type:"bar",data:{labels,datasets:[
     barDs("Solar",solar,COLORS.solar),
     barDs("Consumed",consumed,COLORS.consumption,"b"),
