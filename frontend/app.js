@@ -216,3 +216,150 @@ $("today-btn").addEventListener("click",()=>{state.selectedDate=isoToday();$("da
   dp.max=state.selectedDate;
   render();
 })();
+
+async function renderYear(anchorDate){
+  showLoading();
+  const anchor=new Date(anchorDate);
+  const currentYear=anchor.getFullYear();
+  const years=[2024,2025,2026].filter(y=>y<=currentYear);
+  const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const pad=n=>String(n).padStart(2,"0");
+
+  // Build list of all dates we need
+  const allDates=[];
+  for(const year of years){
+    for(let m=1;m<=12;m++){
+      const daysInMonth=new Date(year,m,0).getDate();
+      for(let d=1;d<=daysInMonth;d++){
+        const iso=`${year}-${pad(m)}-${pad(d)}`;
+        if(iso<=isoToday()) allDates.push(iso);
+      }
+    }
+  }
+
+  // Load all days in parallel batches
+  const allDays={};
+  const batchSize=30;
+  for(let i=0;i<allDates.length;i+=batchSize){
+    const batch=allDates.slice(i,i+batchSize);
+    const results=await loadManyDays(batch);
+    Object.assign(allDays,results);
+  }
+
+  // Aggregate by year+month
+  function monthKey(year,month){return `${year}-${pad(month)}`;}
+  const agg={};
+  for(const year of years){
+    for(let m=1;m<=12;m++){
+      const key=monthKey(year,m);
+      agg[key]={solar:0,consumed:0,imported:0,exported:0,days:0};
+      const daysInMonth=new Date(year,m,0).getDate();
+      for(let d=1;d<=daysInMonth;d++){
+        const iso=`${year}-${pad(m)}-${pad(d)}`;
+        if(iso>isoToday()) continue;
+        const day=allDays[iso];
+        if(!day) continue;
+        const pts=day.data_points||[];
+        if(pts.length<2) continue;
+        agg[key].solar+=calcKwh(pts,"pv");
+        agg[key].consumed+=calcKwh(pts,"cons");
+        agg[key].imported+=calcKwhPos(pts,"grid");
+        agg[key].exported+=calcKwhNeg(pts,"grid");
+        agg[key].days++;
+      }
+    }
+  }
+
+  // Build charts
+  const yearColors={2024:COLORS.solar,2025:COLORS.battery,2026:COLORS.grid};
+
+  // Chart 1: Monthly solar by year
+  const solarDatasets=years.map(year=>({
+    label:`${year}`,
+    data:Array.from({length:12},(_,i)=>{const k=monthKey(year,i+1);return agg[k]?agg[k].solar:0;}),
+    backgroundColor:yearColors[year]+"cc",
+  }));
+  mkChart("chart-year-solar",{type:"bar",data:{labels:months,datasets:solarDatasets},
+    options:barOpts(v=>`${v.toFixed(0)} kWh`,false)});
+
+  // Chart 2: Monthly consumption by year
+  const consDatasets=years.map(year=>({
+    label:`${year}`,
+    data:Array.from({length:12},(_,i)=>{const k=monthKey(year,i+1);return agg[k]?agg[k].consumed:0;}),
+    backgroundColor:yearColors[year]+"cc",
+  }));
+  mkChart("chart-year-cons",{type:"bar",data:{labels:months,datasets:consDatasets},
+    options:barOpts(v=>`${v.toFixed(0)} kWh`,false)});
+
+  // Chart 3: Grid import vs export by month (current year)
+  const gridLabels=months;
+  const importData=Array.from({length:12},(_,i)=>{const k=monthKey(currentYear,i+1);return agg[k]?agg[k].imported:0;});
+  const exportData=Array.from({length:12},(_,i)=>{const k=monthKey(currentYear,i+1);return agg[k]?agg[k].exported:0;});
+  mkChart("chart-year-grid",{type:"bar",data:{labels:gridLabels,datasets:[
+    {label:"Imported",data:importData,backgroundColor:COLORS.grid+"cc"},
+    {label:"Exported",data:exportData,backgroundColor:COLORS.export+"cc"},
+  ]},options:barOpts(v=>`${v.toFixed(0)} kWh`,false)});
+
+  // Chart 4: Self-sufficiency by month
+  const selfDatasets=years.map(year=>({
+    label:`${year}`,
+    data:Array.from({length:12},(_,i)=>{
+      const k=monthKey(year,i+1);
+      const a=agg[k];
+      if(!a||a.consumed===0)return 0;
+      return Math.min(100,((a.consumed-a.imported)/a.consumed)*100);
+    }),
+    backgroundColor:yearColors[year]+"cc",
+  }));
+  mkChart("chart-year-self",{type:"bar",data:{labels:months,datasets:selfDatasets},
+    options:barOpts(v=>`${v.toFixed(0)}%`,false,0,100)});
+
+  // Records
+  let bestSolarDay={date:"",val:0};
+  let bestExportDay={date:"",val:0};
+  let highestConsDay={date:"",val:0};
+  for(const iso of allDates){
+    const day=allDays[iso];
+    if(!day) continue;
+    const pts=day.data_points||[];
+    if(pts.length<2) continue;
+    const s=calcKwh(pts,"pv");
+    const e=calcKwhNeg(pts,"grid");
+    const c=calcKwh(pts,"cons");
+    if(s>bestSolarDay.val){bestSolarDay={date:iso,val:s};}
+    if(e>bestExportDay.val){bestExportDay={date:iso,val:e};}
+    if(c>highestConsDay.val){highestConsDay={date:iso,val:c};}
+  }
+
+  $("year-records").innerHTML=[
+    {icon:"☀️",label:"Best Solar Day",val:fmtKwh(bestSolarDay.val),date:bestSolarDay.date},
+    {icon:"🔌",label:"Best Export Day",val:fmtKwh(bestExportDay.val),date:bestExportDay.date},
+    {icon:"🏠",label:"Highest Consumption",val:fmtKwh(highestConsDay.val),date:highestConsDay.date},
+  ].map(({icon,label,val,date})=>`
+    <div class="month-total-card">
+      <div class="label">${icon} ${label}</div>
+      <div class="val" style="color:var(--text);font-size:20px">${val}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">${date}</div>
+    </div>`).join("");
+
+  showView("year");
+}
+
+// Add year view to views object and render function
+views.year = document.getElementById("view-year");
+
+const origRender = render;
+window.render = function() {
+  if(state.tab === "year") renderYear(state.selectedDate);
+  else origRender();
+}
+
+// Override the tab click handler to use new render
+document.querySelectorAll(".tab").forEach(btn=>{
+  btn.onclick = ()=>{
+    document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
+    btn.classList.add("active");
+    state.tab=btn.dataset.tab;
+    window.render();
+  };
+});
