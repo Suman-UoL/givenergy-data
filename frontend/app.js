@@ -411,6 +411,60 @@ async function renderBase() {
     options: lineOpts(v => fmtW(v))
   });
 
+  // Chart 1b: Daily base load year-on-year (day of year)
+  const dayOfYear = iso => {
+    const d = new Date(iso);
+    const start = new Date(d.getFullYear(), 0, 0);
+    return Math.floor((d - start) / 86400000);
+  };
+
+  const doyDatasets = years.map(year => {
+    const yearDates = allDates.filter(d => d.startsWith(`${year}-`));
+    // Build array of 366 values (one per day of year)
+    const doyData = Array(367).fill(null);
+    for (const iso of yearDates) {
+      const doy = dayOfYear(iso);
+      if (dailyBase[iso]) doyData[doy] = dailyBase[iso];
+    }
+    // Create labels and data only for days 1-366
+    return {
+      label: `${year}`,
+      data: doyData.slice(1),
+      borderColor: yearColors[year],
+      backgroundColor: "transparent",
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.3,
+      spanGaps: true,
+    };
+  });
+
+  // Day of year labels (1-366)
+  const doyLabels = Array.from({length: 366}, (_, i) => {
+    const d = new Date(2024, 0, i + 1);
+    return d.toLocaleDateString("en-GB", {month:"short", day:"numeric"});
+  });
+
+  mkChart("chart-base-doy", {
+    type: "line",
+    data: { labels: doyLabels, datasets: doyDatasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: true, labels: { color: COLORS.muted, font: { size: 12 } } },
+        tooltip: {
+          backgroundColor: "#0f1729", borderColor: COLORS.border, borderWidth: 1,
+          callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtW(ctx.parsed.y)}` }
+        }
+      },
+      scales: {
+        x: { grid: { color: COLORS.border }, ticks: { color: COLORS.muted, font: { size: 11 }, maxTicksLimit: 12 } },
+        y: { grid: { color: COLORS.border }, ticks: { color: COLORS.muted, font: { size: 11 }, callback: v => fmtW(v) } }
+      }
+    }
+  });
+
   // Chart 2: Monthly average base load
   const monthlyBase = {};
   for (const year of years) {
