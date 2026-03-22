@@ -17,6 +17,7 @@
         <button class="tab" data-tab="week">Week</button>
         <button class="tab" data-tab="month">Month</button>
         <button class="tab" data-tab="year">Year</button>
+        <button class="tab" data-tab="base">Base</button>
       </nav>
       <div class="date-nav">
         <button id="prev-date">‹</button>
@@ -54,6 +55,31 @@
     <div id="view-week" class="view hidden">
       <section class="chart-section"><div class="chart-header"><h2>Daily energy — last 7 days</h2></div><div class="chart-wrap"><canvas id="chart-week"></canvas></div></section>
       <section class="chart-section"><div class="chart-header"><h2>Self-sufficiency — last 7 days</h2></div><div class="chart-wrap short"><canvas id="chart-week-self"></canvas></div></section>
+    </div>
+    <div id="view-base" class="view hidden">
+      <section class="chart-section">
+        <div class="chart-header"><h2>Daily base load trend (W)</h2><span style="font-size:12px;color:var(--muted)">10th percentile of daily consumption readings</span></div>
+        <div class="chart-wrap"><canvas id="chart-base-trend"></canvas></div>
+      </section>
+      <section class="chart-section">
+        <div class="chart-header"><h2>Monthly average base load (W)</h2></div>
+        <div class="chart-wrap short"><canvas id="chart-base-monthly"></canvas></div>
+      </section>
+      <section class="chart-section">
+        <div class="chart-header">
+          <h2>Consumption distribution — selected day</h2>
+          <div style="display:flex;gap:10px;align-items:center">
+            <input type="date" id="base-date-picker" style="padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);color:var(--text);font-size:13px;font-family:monospace"/>
+            <button id="base-date-load" style="padding:6px 14px;border-radius:8px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-size:13px">Load</button>
+          </div>
+        </div>
+        <div class="chart-wrap"><canvas id="chart-base-hist"></canvas></div>
+      </section>
+      <section class="chart-section">
+        <div class="chart-header"><h2>Base load year-on-year by month (W)</h2></div>
+        <div class="chart-wrap"><canvas id="chart-base-yoy"></canvas></div>
+      </section>
+      <div class="month-totals" id="base-stats"></div>
     </div>
     <div id="view-year" class="view hidden">
       <section class="chart-section">

@@ -319,3 +319,219 @@ $("today-btn").addEventListener("click",()=>{state.selectedDate=isoToday();$("da
   dp.max=state.selectedDate;
   render();
 })();
+
+// ── Base load analysis ────────────────────────────────────────────────────────
+
+function percentile(arr, p) {
+  if (!arr.length) return 0;
+  const sorted = [...arr].sort((a, b) => a - b);
+  const idx = Math.floor((p / 100) * sorted.length);
+  return sorted[Math.max(0, idx)];
+}
+
+function baseLoad(pts) {
+  // Take consumption readings, return 10th percentile
+  const cons = (pts || []).map(p => p.cons || 0).filter(v => v > 0);
+  if (cons.length < 5) return 0;
+  return percentile(cons, 10);
+}
+
+function histogram(pts, bins = 20) {
+  const cons = (pts || []).map(p => p.cons || 0).filter(v => v >= 0);
+  if (!cons.length) return { labels: [], data: [] };
+  const min = 0;
+  const max = Math.min(Math.max(...cons), 6000); // cap at 6kW to ignore charging spikes
+  const binSize = (max - min) / bins;
+  const counts = Array(bins).fill(0);
+  for (const v of cons) {
+    if (v > max) continue;
+    const idx = Math.min(bins - 1, Math.floor((v - min) / binSize));
+    counts[idx]++;
+  }
+  const labels = Array.from({ length: bins }, (_, i) =>
+    `${Math.round(min + i * binSize)}W`
+  );
+  return { labels, data: counts };
+}
+
+async function renderBase() {
+  showLoading();
+  const pad = n => String(n).padStart(2, "0");
+  const years = [2024, 2025, 2026];
+  const yearColors = { 2024: COLORS.solar, 2025: COLORS.battery, 2026: COLORS.grid };
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  // Build all dates
+  const allDates = [];
+  for (const year of years) {
+    for (let m = 1; m <= 12; m++) {
+      const dim = new Date(year, m, 0).getDate();
+      for (let d = 1; d <= dim; d++) {
+        const iso = `${year}-${pad(m)}-${pad(d)}`;
+        if (iso <= isoToday()) allDates.push(iso);
+      }
+    }
+  }
+
+  // Load in batches
+  const allDays = {};
+  for (let i = 0; i < allDates.length; i += 30) {
+    Object.assign(allDays, await loadManyDays(allDates.slice(i, i + 30)));
+  }
+
+  // Calculate daily base load
+  const dailyBase = {};
+  for (const iso of allDates) {
+    const day = allDays[iso];
+    if (!day) continue;
+    const bl = baseLoad(day.data_points);
+    if (bl > 0) dailyBase[iso] = bl;
+  }
+
+  // Chart 1: Daily base load trend (last 90 days)
+  const recentDates = allDates.filter(d => d >= addDays(isoToday(), -90));
+  const trendLabels = recentDates.map(d => d.slice(5));
+  const trendData = recentDates.map(d => dailyBase[d] || null);
+  mkChart("chart-base-trend", {
+    type: "line",
+    data: {
+      labels: trendLabels,
+      datasets: [{
+        label: "Base load",
+        data: trendData,
+        borderColor: COLORS.consumption,
+        backgroundColor: COLORS.consumption + "22",
+        borderWidth: 2,
+        pointRadius: 2,
+        fill: true,
+        tension: 0.3,
+        spanGaps: true,
+      }]
+    },
+    options: lineOpts(v => fmtW(v))
+  });
+
+  // Chart 2: Monthly average base load
+  const monthlyBase = {};
+  for (const year of years) {
+    for (let m = 1; m <= 12; m++) {
+      const key = `${year}-${pad(m)}`;
+      const vals = [];
+      const dim = new Date(year, m, 0).getDate();
+      for (let d = 1; d <= dim; d++) {
+        const iso = `${year}-${pad(m)}-${pad(d)}`;
+        if (dailyBase[iso]) vals.push(dailyBase[iso]);
+      }
+      monthlyBase[key] = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0;
+    }
+  }
+
+  // Use current year for monthly chart
+  const currentYear = new Date().getFullYear();
+  mkChart("chart-base-monthly", {
+    type: "bar",
+    data: {
+      labels: months,
+      datasets: [{
+        label: "Avg base load",
+        data: Array.from({ length: 12 }, (_, i) => monthlyBase[`${currentYear}-${pad(i + 1)}`] || 0),
+        backgroundColor: COLORS.consumption + "cc",
+      }]
+    },
+    options: barOpts(v => fmtW(v), false)
+  });
+
+  // Chart 3: Histogram for selected day (default today)
+  const baseDatePicker = $("base-date-picker");
+  baseDatePicker.value = isoToday();
+  baseDatePicker.max = isoToday();
+
+  async function loadHist(dateStr) {
+    try {
+      const day = await loadDay(dateStr);
+      const { labels, data } = histogram(day.data_points);
+      // Find base load line position
+      const bl = baseLoad(day.data_points);
+      mkChart("chart-base-hist", {
+        type: "bar",
+        data: {
+          labels,
+          datasets: [
+            { label: "Frequency", data, backgroundColor: COLORS.grid + "cc" },
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+          plugins: {
+            tooltip: {
+              backgroundColor: "#0f1729", borderColor: COLORS.border, borderWidth: 1,
+              callbacks: { label: ctx => ` ${ctx.parsed.y} readings` }
+            },
+            annotation: {
+              annotations: {
+                baseLine: {
+                  type: "line", xMin: 0, xMax: labels.length,
+                  yMin: 0, yMax: 0,
+                }
+              }
+            }
+          },
+          scales: {
+            x: { grid: { color: COLORS.border }, ticks: { color: COLORS.muted, font: { size: 11 }, maxTicksLimit: 10 } },
+            y: { grid: { color: COLORS.border }, ticks: { color: COLORS.muted, font: { size: 11 } } }
+          }
+        }
+      });
+      // Update base stats
+      $("base-stats").innerHTML = [
+        { label: "Base Load", val: fmtW(bl), color: COLORS.consumption },
+        { label: "Median Consumption", val: fmtW(percentile(day.data_points.map(p=>p.cons||0).filter(v=>v>0), 50)), color: COLORS.grid },
+        { label: "Peak Consumption", val: fmtW(Math.max(...day.data_points.map(p=>p.cons||0))), color: COLORS.solar },
+        { label: "Readings", val: `${day.data_points.length}`, color: COLORS.muted },
+      ].map(({ label, val, color }) => `
+        <div class="month-total-card">
+          <div class="label">${label}</div>
+          <div class="val" style="color:${color};font-size:22px">${val}</div>
+        </div>`).join("");
+    } catch (e) {
+      console.error("Hist load failed", e);
+    }
+  }
+
+  await loadHist(isoToday());
+  $("base-date-load").addEventListener("click", () => loadHist(baseDatePicker.value));
+
+  // Chart 4: Year-on-year base load by month
+  mkChart("chart-base-yoy", {
+    type: "bar",
+    data: {
+      labels: months,
+      datasets: years.map(year => ({
+        label: `${year}`,
+        data: Array.from({ length: 12 }, (_, i) => monthlyBase[`${year}-${pad(i + 1)}`] || 0),
+        backgroundColor: yearColors[year] + "cc",
+      }))
+    },
+    options: barOpts(v => fmtW(v), false)
+  });
+
+  showView("base");
+}
+
+// Wire up Base tab
+views.base = document.getElementById("view-base");
+
+const origRenderFn = render;
+render = function() {
+  if (state.tab === "base") renderBase();
+  else origRenderFn();
+};
+
+document.querySelectorAll(".tab").forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll(".tab").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    state.tab = btn.dataset.tab;
+    render();
+  };
+});
