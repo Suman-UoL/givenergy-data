@@ -1,96 +1,50 @@
-const DATA_BASE = "data";
-const COLORS = {
-  solar:"#f59e0b",consumption:"#f43f5e",battery:"#10b981",
-  grid:"#3b82f6",export:"#8b5cf6",charge:"#06b6d4",
-  muted:"#64748b",border:"#1a2540",text:"#e2e8f0"
-};
-
-// Calculate kWh from data points using actual time intervals
-function calcKwh(pts, key) {
-  if (!pts || pts.length < 2) return 0;
-  let total = 0;
-  for (let i = 1; i < pts.length; i++) {
-    const dt = (new Date(pts[i].t) - new Date(pts[i-1].t)) / 3600000; // hours
-    if (dt > 0 && dt < 0.5) { // ignore gaps > 30 min
-      total += Math.abs(pts[i][key] || 0) * dt;
-    }
-  }
-  return total / 1000; // W to kWh
-}
-function calcKwhPositive(pts, key) {
-  if (!pts || pts.length < 2) return 0;
-  let total = 0;
-  for (let i = 1; i < pts.length; i++) {
-    const dt = (new Date(pts[i].t) - new Date(pts[i-1].t)) / 3600000;
-    if (dt > 0 && dt < 0.5) {
-      const v = pts[i][key] || 0;
-      if (v > 0) total += v * dt;
-    }
-  }
-  return total / 1000;
-}
-function calcKwhNegative(pts, key) {
-  if (!pts || pts.length < 2) return 0;
-  let total = 0;
-  for (let i = 1; i < pts.length; i++) {
-    const dt = (new Date(pts[i].t) - new Date(pts[i-1].t)) / 3600000;
-    if (dt > 0 && dt < 0.5) {
-      const v = pts[i][key] || 0;
-      if (v < 0) total += Math.abs(v) * dt;
-    }
-  }
-  return total / 1000;
-}
-
-// Calculate kWh from data points using actual time intervals
-function calcKwh(pts, key) {
-  if (!pts || pts.length < 2) return 0;
-  let total = 0;
-  for (let i = 1; i < pts.length; i++) {
-    const dt = (new Date(pts[i].t) - new Date(pts[i-1].t)) / 3600000; // hours
-    if (dt > 0 && dt < 0.5) { // ignore gaps > 30 min
-      total += Math.abs(pts[i][key] || 0) * dt;
-    }
-  }
-  return total / 1000; // W to kWh
-}
-function calcKwhPositive(pts, key) {
-  if (!pts || pts.length < 2) return 0;
-  let total = 0;
-  for (let i = 1; i < pts.length; i++) {
-    const dt = (new Date(pts[i].t) - new Date(pts[i-1].t)) / 3600000;
-    if (dt > 0 && dt < 0.5) {
-      const v = pts[i][key] || 0;
-      if (v > 0) total += v * dt;
-    }
-  }
-  return total / 1000;
-}
-function calcKwhNegative(pts, key) {
-  if (!pts || pts.length < 2) return 0;
-  let total = 0;
-  for (let i = 1; i < pts.length; i++) {
-    const dt = (new Date(pts[i].t) - new Date(pts[i-1].t)) / 3600000;
-    if (dt > 0 && dt < 0.5) {
-      const v = pts[i][key] || 0;
-      if (v < 0) total += Math.abs(v) * dt;
-    }
-  }
-  return total / 1000;
-}
+const DATA_BASE="data";
+const COLORS={solar:"#f59e0b",consumption:"#f43f5e",battery:"#10b981",grid:"#3b82f6",export:"#8b5cf6",charge:"#06b6d4",muted:"#64748b",border:"#1a2540",text:"#e2e8f0"};
 Chart.defaults.color=COLORS.muted;
 Chart.defaults.borderColor=COLORS.border;
 Chart.defaults.font.family="'JetBrains Mono',monospace";
 Chart.defaults.plugins.legend.display=false;
+
 const chartInstances={};
 function destroyChart(id){if(chartInstances[id]){chartInstances[id].destroy();delete chartInstances[id];}}
 function mkChart(id,config){destroyChart(id);const ctx=document.getElementById(id).getContext("2d");chartInstances[id]=new Chart(ctx,config);return chartInstances[id];}
+
 const fmtKwh=v=>`${Math.abs(Number(v)||0).toFixed(2)} kWh`;
 const fmtW=v=>{const n=Number(v)||0;return Math.abs(n)>=1000?`${(n/1000).toFixed(2)} kW`:`${Math.round(n)} W`;};
 const fmtPct=v=>`${Math.round(Number(v)||0)}%`;
 function isoToday(){return new Date().toISOString().slice(0,10);}
 function addDays(iso,n){const d=new Date(iso);d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);}
 function shortTime(iso){if(!iso)return "";return iso.length>5?iso.slice(11,16):iso.slice(0,5);}
+
+// Calculate kWh using actual time intervals between readings
+function calcKwh(pts,key){
+  if(!pts||pts.length<2)return 0;
+  let total=0;
+  for(let i=1;i<pts.length;i++){
+    const dt=(new Date(pts[i].t)-new Date(pts[i-1].t))/3600000;
+    if(dt>0&&dt<0.5)total+=Math.abs(pts[i][key]||0)*dt;
+  }
+  return total/1000;
+}
+function calcKwhPos(pts,key){
+  if(!pts||pts.length<2)return 0;
+  let total=0;
+  for(let i=1;i<pts.length;i++){
+    const dt=(new Date(pts[i].t)-new Date(pts[i-1].t))/3600000;
+    if(dt>0&&dt<0.5){const v=pts[i][key]||0;if(v>0)total+=v*dt;}
+  }
+  return total/1000;
+}
+function calcKwhNeg(pts,key){
+  if(!pts||pts.length<2)return 0;
+  let total=0;
+  for(let i=1;i<pts.length;i++){
+    const dt=(new Date(pts[i].t)-new Date(pts[i-1].t))/3600000;
+    if(dt>0&&dt<0.5){const v=pts[i][key]||0;if(v<0)total+=Math.abs(v)*dt;}
+  }
+  return total/1000;
+}
+
 const cache={};
 async function loadDay(dateStr){
   if(cache[dateStr])return cache[dateStr];
@@ -98,66 +52,53 @@ async function loadDay(dateStr){
   if(!r.ok)throw new Error(`No data for ${dateStr}`);
   const json=await r.json();cache[dateStr]=json;return json;
 }
-const state={tab:"day",selectedDate:isoToday()};
-const $=id=>document.getElementById(id);
-const loading=$("loading"),errorState=$("error-state"),errorMsg=$("error-msg");
-const views={day:$("view-day"),week:$("view-week"),month:$("view-month")};
-function showLoading(){loading.classList.remove("hidden");errorState.classList.add("hidden");Object.values(views).forEach(v=>v.classList.add("hidden"));}
-function showError(msg){loading.classList.add("hidden");errorState.classList.remove("hidden");errorMsg.textContent=msg;Object.values(views).forEach(v=>v.classList.add("hidden"));}
-function showView(name){loading.classList.add("hidden");errorState.classList.add("hidden");Object.entries(views).forEach(([k,v])=>{k===name?v.classList.remove("hidden"):v.classList.add("hidden");});}
-function setText(id,val){const el=$(id);if(el)el.textContent=val;}
-function sumFlow(flows,key){return(flows||[]).reduce((a,f)=>a+(Number(f[key])||0),0);}
-function getDayFlows(day){return day?day.energy_flows||[]:[]}
-function getTotal(day,totalKey,fallbackFn){
-  if(!day)return 0;
-  const t=day.totals||{};
-  if(t[totalKey]!==undefined&&t[totalKey]!==null)return Number(t[totalKey]);
-  return fallbackFn(day);
-}
 async function loadManyDays(dates){
   const result={};
   await Promise.allSettled(dates.map(async d=>{try{result[d]=await loadDay(d);}catch{result[d]=null;}}));
   return result;
 }
+
+const state={tab:"day",selectedDate:isoToday()};
+const $=id=>document.getElementById(id);
+const loading=$("loading"),errorState=$("error-state"),errorMsg=$("error-msg");
+const views={day:$("view-day"),week:$("view-week"),month:$("view-month")};
+
+function showLoading(){loading.classList.remove("hidden");errorState.classList.add("hidden");Object.values(views).forEach(v=>v.classList.add("hidden"));}
+function showError(msg){loading.classList.add("hidden");errorState.classList.remove("hidden");errorMsg.textContent=msg;Object.values(views).forEach(v=>v.classList.add("hidden"));}
+function showView(name){loading.classList.add("hidden");errorState.classList.add("hidden");Object.entries(views).forEach(([k,v])=>{k===name?v.classList.remove("hidden"):v.classList.add("hidden");});}
+function setText(id,val){const el=$(id);if(el)el.textContent=val;}
+
 function lineDs(label,data,color,dashed=false){
   return{label,data,borderColor:color,backgroundColor:color+"22",borderWidth:2,pointRadius:0,fill:true,tension:0.3,borderDash:dashed?[4,3]:[]};
 }
 function barDs(label,data,color,stackId="a"){
   return{label,data,backgroundColor:color+"cc",stack:stackId};
 }
-function lineOptions(formatter,min,max){
-  return{responsive:true,maintainAspectRatio:false,animation:{duration:300},
-    interaction:{mode:"index",intersect:false},
-    scales:{
-      x:{grid:{color:COLORS.border},ticks:{maxTicksLimit:12,color:COLORS.muted,font:{size:11}}},
-      y:{min,max,grid:{color:COLORS.border},ticks:{color:COLORS.muted,font:{size:11},callback:formatter}}
-    },
+function lineOpts(formatter,min,max){
+  return{responsive:true,maintainAspectRatio:false,animation:{duration:300},interaction:{mode:"index",intersect:false},
+    scales:{x:{grid:{color:COLORS.border},ticks:{maxTicksLimit:12,color:COLORS.muted,font:{size:11}}},
+      y:{min,max,grid:{color:COLORS.border},ticks:{color:COLORS.muted,font:{size:11},callback:formatter}}},
     plugins:{tooltip:{backgroundColor:"#0f1729",borderColor:COLORS.border,borderWidth:1,
-      callbacks:{label:ctx=>` ${ctx.dataset.label}: ${formatter(ctx.parsed.y)}`}}}
-  };
+      callbacks:{label:ctx=>` ${ctx.dataset.label}: ${formatter(ctx.parsed.y)}`}}}};
 }
-function barOptions(formatter,stacked=true,min,max){
-  return{responsive:true,maintainAspectRatio:false,animation:{duration:300},
-    interaction:{mode:"index",intersect:false},
-    scales:{
-      x:{stacked,grid:{color:COLORS.border},ticks:{maxTicksLimit:16,color:COLORS.muted,font:{size:11}}},
-      y:{min,max,stacked,grid:{color:COLORS.border},ticks:{color:COLORS.muted,font:{size:11},callback:formatter}}
-    },
+function barOpts(formatter,stacked=true,min,max){
+  return{responsive:true,maintainAspectRatio:false,animation:{duration:300},interaction:{mode:"index",intersect:false},
+    scales:{x:{stacked,grid:{color:COLORS.border},ticks:{maxTicksLimit:16,color:COLORS.muted,font:{size:11}}},
+      y:{min,max,stacked,grid:{color:COLORS.border},ticks:{color:COLORS.muted,font:{size:11},callback:formatter}}},
     plugins:{tooltip:{backgroundColor:"#0f1729",borderColor:COLORS.border,borderWidth:1,
-      callbacks:{label:ctx=>` ${ctx.dataset.label}: ${formatter(ctx.parsed.y)}`}}}
-  };
+      callbacks:{label:ctx=>` ${ctx.dataset.label}: ${formatter(ctx.parsed.y)}`}}}};
 }
+
 async function renderDay(dateStr){
   showLoading();
   let day;
   try{day=await loadDay(dateStr);}
-  catch(e){showError(`No data for ${dateStr} yet. The fetcher runs every 30 minutes — check back soon.`);return;}
+  catch(e){showError(`No data for ${dateStr} yet. The fetcher runs every 30 minutes.`);return;}
   const pts=day.data_points||[];
-  const flows=day.energy_flows||[];
-  const totalSolar=calcKwh(day.data_points,"pv");
-  const totalConsumed=calcKwh(day.data_points,"cons");
-  const totalExported=calcKwhNegative(day.data_points,"grid");
-  const totalImported=calcKwhPositive(day.data_points,"grid");
+  const totalSolar=calcKwh(pts,"pv");
+  const totalConsumed=calcKwh(pts,"cons");
+  const totalImported=calcKwhPos(pts,"grid");
+  const totalExported=calcKwhNeg(pts,"grid");
   const selfSuffPct=totalConsumed>0?Math.min(100,((totalConsumed-totalImported)/totalConsumed)*100):0;
   let peakSolar=0,peakTime="";
   for(const p of pts){if((p.pv||0)>peakSolar){peakSolar=p.pv;peakTime=shortTime(p.t);}}
@@ -177,11 +118,12 @@ async function renderDay(dateStr){
     lineDs("Consumption",thinPts.map(p=>p.cons||0),COLORS.consumption),
     lineDs("Battery (±)",thinPts.map(p=>p.bat||0),COLORS.battery,true),
     lineDs("Grid (±)",thinPts.map(p=>p.grid||0),COLORS.grid,true),
-  ]},options:lineOptions(v=>fmtW(v))});
+  ]},options:lineOpts(v=>fmtW(v))});
   const socPts=thinPts.filter(p=>p.soc!==null&&p.soc!==undefined);
   mkChart("chart-soc",{type:"line",data:{labels:socPts.map(p=>shortTime(p.t)),datasets:[
     lineDs("Battery %",socPts.map(p=>p.soc),COLORS.battery)
-  ]},options:lineOptions(v=>`${v.toFixed(0)}%`,0,100)});
+  ]},options:lineOpts(v=>`${v.toFixed(0)}%`,0,100)});
+  const flows=day.energy_flows||[];
   if(flows.length>0){
     mkChart("chart-flows",{type:"bar",data:{labels:flows.map(f=>shortTime(f.t)),datasets:[
       barDs("Solar→House",flows.map(f=>f.pv_h||0),COLORS.solar),
@@ -189,10 +131,11 @@ async function renderDay(dateStr){
       barDs("Bat→House",flows.map(f=>f.bat_h||0),COLORS.battery),
       barDs("Exported",flows.map(f=>f.pv_g||0),COLORS.export,"b"),
       barDs("Bat Charge",flows.map(f=>f.pv_b||0),COLORS.charge,"b"),
-    ]},options:barOptions(v=>`${v.toFixed(3)} kWh`)});
+    ]},options:barOpts(v=>`${v.toFixed(3)} kWh`)});
   }
   showView("day");
 }
+
 async function renderWeek(anchorDate){
   showLoading();
   const dates=Array.from({length:7},(_,i)=>addDays(anchorDate,-6+i));
@@ -200,20 +143,21 @@ async function renderWeek(anchorDate){
   const labels=dates.map(d=>d.slice(5));
   const solar=dates.map(d=>days[d]?calcKwh(days[d].data_points,"pv"):0);
   const consumed=dates.map(d=>days[d]?calcKwh(days[d].data_points,"cons"):0);
-  const imported=dates.map(d=>days[d]?calcKwhPositive(days[d].data_points,"grid"):0);
-  const exported=dates.map(d=>days[d]?calcKwhNegative(days[d].data_points,"grid"):0);
+  const imported=dates.map(d=>days[d]?calcKwhPos(days[d].data_points,"grid"):0);
+  const exported=dates.map(d=>days[d]?calcKwhNeg(days[d].data_points,"grid"):0);
   const selfSuff=dates.map((_,i)=>consumed[i]>0?Math.min(100,((consumed[i]-imported[i])/consumed[i])*100):0);
   mkChart("chart-week",{type:"bar",data:{labels,datasets:[
     barDs("Solar",solar,COLORS.solar),
     barDs("Consumed",consumed,COLORS.consumption,"b"),
     barDs("Exported",exported,COLORS.export,"c"),
     barDs("Imported",imported,COLORS.grid,"c"),
-  ]},options:barOptions(v=>`${v.toFixed(2)} kWh`,false)});
+  ]},options:barOpts(v=>`${v.toFixed(2)} kWh`,false)});
   mkChart("chart-week-self",{type:"bar",data:{labels,datasets:[
     barDs("Self-sufficiency %",selfSuff,COLORS.battery)
-  ]},options:barOptions(v=>`${v.toFixed(0)}%`,false,0,100)});
+  ]},options:barOpts(v=>`${v.toFixed(0)}%`,false,0,100)});
   showView("week");
 }
+
 async function renderMonth(anchorDate){
   showLoading();
   const anchor=new Date(anchorDate);
@@ -225,14 +169,14 @@ async function renderMonth(anchorDate){
   const labels=dates.map(d=>d.slice(8));
   const solar=dates.map(d=>days[d]?calcKwh(days[d].data_points,"pv"):0);
   const consumed=dates.map(d=>days[d]?calcKwh(days[d].data_points,"cons"):0);
-  const exported=dates.map(d=>days[d]?calcKwhNegative(days[d].data_points,"grid"):0);
-  const imported=dates.map(d=>days[d]?calcKwhPositive(days[d].data_points,"grid"):0);
+  const exported=dates.map(d=>days[d]?calcKwhNeg(days[d].data_points,"grid"):0);
+  const imported=dates.map(d=>days[d]?calcKwhPos(days[d].data_points,"grid"):0);
   mkChart("chart-month",{type:"bar",data:{labels,datasets:[
     barDs("Solar",solar,COLORS.solar),
     barDs("Consumed",consumed,COLORS.consumption,"b"),
     barDs("Exported",exported,COLORS.export,"c"),
     barDs("Imported",imported,COLORS.grid,"c"),
-  ]},options:barOptions(v=>`${v.toFixed(2)} kWh`,false)});
+  ]},options:barOpts(v=>`${v.toFixed(2)} kWh`,false)});
   const tSolar=solar.reduce((a,b)=>a+b,0);
   const tConsumed=consumed.reduce((a,b)=>a+b,0);
   const tExported=exported.reduce((a,b)=>a+b,0);
@@ -247,12 +191,14 @@ async function renderMonth(anchorDate){
   ].map(({label,val,color})=>`<div class="month-total-card"><div class="label">${label}</div><div class="val" style="color:${color}">${val}</div></div>`).join("");
   showView("month");
 }
+
 function render(){
   const d=state.selectedDate;
   if(state.tab==="day")renderDay(d);
   if(state.tab==="week")renderWeek(d);
   if(state.tab==="month")renderMonth(d);
 }
+
 document.querySelectorAll(".tab").forEach(btn=>{
   btn.addEventListener("click",()=>{
     document.querySelectorAll(".tab").forEach(b=>b.classList.remove("active"));
@@ -263,6 +209,7 @@ $("date-picker").addEventListener("change",e=>{state.selectedDate=e.target.value
 $("prev-date").addEventListener("click",()=>{state.selectedDate=addDays(state.selectedDate,-1);$("date-picker").value=state.selectedDate;render();});
 $("next-date").addEventListener("click",()=>{const next=addDays(state.selectedDate,1);if(next<=isoToday()){state.selectedDate=next;$("date-picker").value=state.selectedDate;render();}});
 $("today-btn").addEventListener("click",()=>{state.selectedDate=isoToday();$("date-picker").value=state.selectedDate;render();});
+
 (async()=>{
   const dp=$("date-picker");
   dp.value=state.selectedDate;
