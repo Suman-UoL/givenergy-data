@@ -330,17 +330,25 @@ function percentile(arr, p) {
 }
 
 function baseLoad(pts) {
-  // Take consumption readings, return 10th percentile
-  const cons = (pts || []).map(p => p.cons || 0).filter(v => v > 0);
-  if (cons.length < 5) return 0;
-  return percentile(cons, 10);
+  // Exclude 00:00-06:00 (overnight charging window)
+  // Use 10th percentile of remaining readings as true base load
+  const daytime = (pts || []).filter(p => {
+    const h = new Date(p.t).getUTCHours();
+    return h >= 6;
+  }).map(p => p.cons || 0).filter(v => v > 0);
+  if (daytime.length < 5) return 0;
+  return percentile(daytime, 10);
 }
 
 function histogram(pts, bins = 20) {
-  const cons = (pts || []).map(p => p.cons || 0).filter(v => v >= 0);
+  // Exclude 00:00-06:00 charging window, cap at 2000W
+  const cons = (pts || []).filter(p => {
+    const h = new Date(p.t).getUTCHours();
+    return h >= 6;
+  }).map(p => p.cons || 0).filter(v => v >= 0);
   if (!cons.length) return { labels: [], data: [] };
   const min = 0;
-  const max = Math.min(Math.max(...cons), 6000); // cap at 6kW to ignore charging spikes
+  const max = Math.min(Math.max(...cons), 2000); // cap at 2kW for readable histogram
   const binSize = (max - min) / bins;
   const counts = Array(bins).fill(0);
   for (const v of cons) {
@@ -447,7 +455,7 @@ async function renderBase() {
     }
   });
 
-  // Chart 1b: Weekly average base load year-on-year
+  // Chart 1b: Weekly average base load year-on-year (smoothed)
   function weekOfYear(iso) {
     const d = new Date(iso);
     const start = new Date(d.getFullYear(), 0, 1);
@@ -455,23 +463,27 @@ async function renderBase() {
   }
 
   const doyDatasets = years.map(year => {
-    // Aggregate into 52 weekly buckets
     const weekBuckets = Array.from({length: 52}, () => []);
     const yearDates = allDates.filter(d => d.startsWith(`${year}-`));
     for (const iso of yearDates) {
       const wk = Math.min(51, weekOfYear(iso));
       if (dailyBase[iso]) weekBuckets[wk].push(dailyBase[iso]);
     }
+    // Weekly average then smooth with 3-week rolling average
     const weeklyAvg = weekBuckets.map(bucket =>
       bucket.length ? bucket.reduce((a, b) => a + b, 0) / bucket.length : null
     );
+    const smoothed = weeklyAvg.map((_, i) => {
+      const slice = weeklyAvg.slice(Math.max(0, i-1), i+2).filter(v => v !== null);
+      return slice.length ? slice.reduce((a,b) => a+b, 0) / slice.length : null;
+    });
     return {
       label: `${year}`,
-      data: weeklyAvg,
+      data: smoothed,
       borderColor: yearColors[year],
       backgroundColor: yearColors[year] + "22",
       borderWidth: 2.5,
-      pointRadius: 3,
+      pointRadius: 0,
       tension: 0.4,
       spanGaps: true,
     };
