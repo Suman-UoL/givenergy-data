@@ -388,61 +388,98 @@ async function renderBase() {
     if (bl > 0) dailyBase[iso] = bl;
   }
 
-  // Chart 1: Daily base load trend (last 90 days)
+  // Chart 1: Daily base load trend (last 90 days) with 7-day rolling average
   const recentDates = allDates.filter(d => d >= addDays(isoToday(), -90));
   const trendLabels = recentDates.map(d => d.slice(5));
   const trendData = recentDates.map(d => dailyBase[d] || null);
+
+  // 7-day rolling average
+  function rollingAvg(data, window) {
+    return data.map((_, i) => {
+      const slice = data.slice(Math.max(0, i - window + 1), i + 1).filter(v => v !== null);
+      return slice.length ? slice.reduce((a, b) => a + b, 0) / slice.length : null;
+    });
+  }
+  const trendSmooth = rollingAvg(trendData, 7);
+
   mkChart("chart-base-trend", {
     type: "line",
     data: {
       labels: trendLabels,
-      datasets: [{
-        label: "Base load",
-        data: trendData,
-        borderColor: COLORS.consumption,
-        backgroundColor: COLORS.consumption + "22",
-        borderWidth: 2,
-        pointRadius: 2,
-        fill: true,
-        tension: 0.3,
-        spanGaps: true,
-      }]
+      datasets: [
+        {
+          label: "Daily base load",
+          data: trendData,
+          borderColor: COLORS.consumption + "44",
+          backgroundColor: "transparent",
+          borderWidth: 1,
+          pointRadius: 0,
+          tension: 0.3,
+          spanGaps: true,
+        },
+        {
+          label: "7-day average",
+          data: trendSmooth,
+          borderColor: COLORS.consumption,
+          backgroundColor: COLORS.consumption + "22",
+          borderWidth: 2.5,
+          pointRadius: 0,
+          fill: true,
+          tension: 0.4,
+          spanGaps: true,
+        }
+      ]
     },
-    options: lineOpts(v => fmtW(v))
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: true, labels: { color: COLORS.muted, font: { size: 12 } } },
+        tooltip: {
+          backgroundColor: "#0f1729", borderColor: COLORS.border, borderWidth: 1,
+          callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtW(ctx.parsed.y)}` }
+        }
+      },
+      scales: {
+        x: { grid: { color: COLORS.border }, ticks: { color: COLORS.muted, font: { size: 11 }, maxTicksLimit: 12 } },
+        y: { grid: { color: COLORS.border }, ticks: { color: COLORS.muted, font: { size: 11 }, callback: v => fmtW(v) } }
+      }
+    }
   });
 
-  // Chart 1b: Daily base load year-on-year (day of year)
-  const dayOfYear = iso => {
+  // Chart 1b: Weekly average base load year-on-year
+  function weekOfYear(iso) {
     const d = new Date(iso);
-    const start = new Date(d.getFullYear(), 0, 0);
-    return Math.floor((d - start) / 86400000);
-  };
+    const start = new Date(d.getFullYear(), 0, 1);
+    return Math.floor((d - start) / (7 * 86400000));
+  }
 
   const doyDatasets = years.map(year => {
+    // Aggregate into 52 weekly buckets
+    const weekBuckets = Array.from({length: 52}, () => []);
     const yearDates = allDates.filter(d => d.startsWith(`${year}-`));
-    // Build array of 366 values (one per day of year)
-    const doyData = Array(367).fill(null);
     for (const iso of yearDates) {
-      const doy = dayOfYear(iso);
-      if (dailyBase[iso]) doyData[doy] = dailyBase[iso];
+      const wk = Math.min(51, weekOfYear(iso));
+      if (dailyBase[iso]) weekBuckets[wk].push(dailyBase[iso]);
     }
-    // Create labels and data only for days 1-366
+    const weeklyAvg = weekBuckets.map(bucket =>
+      bucket.length ? bucket.reduce((a, b) => a + b, 0) / bucket.length : null
+    );
     return {
       label: `${year}`,
-      data: doyData.slice(1),
+      data: weeklyAvg,
       borderColor: yearColors[year],
-      backgroundColor: "transparent",
-      borderWidth: 2,
-      pointRadius: 0,
-      tension: 0.3,
+      backgroundColor: yearColors[year] + "22",
+      borderWidth: 2.5,
+      pointRadius: 3,
+      tension: 0.4,
       spanGaps: true,
     };
   });
 
-  // Day of year labels (1-366)
-  const doyLabels = Array.from({length: 366}, (_, i) => {
-    const d = new Date(2024, 0, i + 1);
-    return d.toLocaleDateString("en-GB", {month:"short", day:"numeric"});
+  const doyLabels = Array.from({length: 52}, (_, i) => {
+    const d = new Date(2024, 0, 1 + i * 7);
+    return d.toLocaleDateString("en-GB", {month: "short", day: "numeric"});
   });
 
   mkChart("chart-base-doy", {
