@@ -57,6 +57,34 @@ async function loadManyDays(dates){
   return result;
 }
 
+// ── Open-Meteo temperature fetching ─────────────────────────────────────────
+const tempCache = {};
+
+async function fetchTemps(startDate, endDate) {
+  const key = `${startDate}_${endDate}`;
+  if (tempCache[key]) return tempCache[key];
+  const url = `https://archive-api.open-meteo.com/v1/archive?latitude=53.8008&longitude=-1.5491&start_date=${startDate}&end_date=${endDate}&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean&timezone=Europe%2FLondon`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error("Temp fetch failed");
+    const data = await r.json();
+    const result = {};
+    const dates = data.daily.time || [];
+    dates.forEach((date, i) => {
+      result[date] = {
+        max:  data.daily.temperature_2m_max[i],
+        min:  data.daily.temperature_2m_min[i],
+        mean: data.daily.temperature_2m_mean[i],
+      };
+    });
+    tempCache[key] = result;
+    return result;
+  } catch(e) {
+    console.warn("Temperature data unavailable:", e);
+    return {};
+  }
+}
+
 const state={tab:"day",selectedDate:isoToday()};
 const $=id=>document.getElementById(id);
 const loading=$("loading"),errorState=$("error-state"),errorMsg=$("error-msg");
@@ -396,12 +424,11 @@ async function renderBase() {
     if (bl > 0) dailyBase[iso] = bl;
   }
 
-  // Chart 1: Daily base load trend (last 90 days) with 7-day rolling average
+  // Chart 1: Daily base load trend (last 90 days) with 7-day rolling average + temperature
   const recentDates = allDates.filter(d => d >= addDays(isoToday(), -90));
   const trendLabels = recentDates.map(d => d.slice(5));
   const trendData = recentDates.map(d => dailyBase[d] || null);
 
-  // 7-day rolling average
   function rollingAvg(data, window) {
     return data.map((_, i) => {
       const slice = data.slice(Math.max(0, i - window + 1), i + 1).filter(v => v !== null);
@@ -409,6 +436,12 @@ async function renderBase() {
     });
   }
   const trendSmooth = rollingAvg(trendData, 7);
+
+  // Fetch temperatures for trend period
+  const trendTemps = await fetchTemps(recentDates[0], recentDates[recentDates.length-1]);
+  const tempMax  = recentDates.map(d => trendTemps[d]?.max  ?? null);
+  const tempMin  = recentDates.map(d => trendTemps[d]?.min  ?? null);
+  const tempMean = recentDates.map(d => trendTemps[d]?.mean ?? null);
 
   mkChart("chart-base-trend", {
     type: "line",
@@ -424,6 +457,7 @@ async function renderBase() {
           pointRadius: 0,
           tension: 0.3,
           spanGaps: true,
+          yAxisID: "y",
         },
         {
           label: "7-day average",
@@ -435,7 +469,32 @@ async function renderBase() {
           fill: true,
           tension: 0.4,
           spanGaps: true,
-        }
+          yAxisID: "y",
+        },
+        {
+          label: "Temp max °C",
+          data: tempMax,
+          borderColor: "#f97316cc",
+          backgroundColor: "#f9731622",
+          borderWidth: 1.5,
+          pointRadius: 0,
+          tension: 0.4,
+          spanGaps: true,
+          yAxisID: "yTemp",
+          fill: "+1",
+        },
+        {
+          label: "Temp min °C",
+          data: tempMin,
+          borderColor: "#38bdf8cc",
+          backgroundColor: "#38bdf822",
+          borderWidth: 1.5,
+          pointRadius: 0,
+          tension: 0.4,
+          spanGaps: true,
+          yAxisID: "yTemp",
+          fill: false,
+        },
       ]
     },
     options: {
@@ -445,12 +504,21 @@ async function renderBase() {
         legend: { display: true, labels: { color: COLORS.muted, font: { size: 12 } } },
         tooltip: {
           backgroundColor: "#0f1729", borderColor: COLORS.border, borderWidth: 1,
-          callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtW(ctx.parsed.y)}` }
+          callbacks: {
+            label: ctx => {
+              if (ctx.dataset.yAxisID === "yTemp") return ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}°C`;
+              return ` ${ctx.dataset.label}: ${fmtW(ctx.parsed.y)}`;
+            }
+          }
         }
       },
       scales: {
         x: { grid: { color: COLORS.border }, ticks: { color: COLORS.muted, font: { size: 11 }, maxTicksLimit: 12 } },
-        y: { grid: { color: COLORS.border }, ticks: { color: COLORS.muted, font: { size: 11 }, callback: v => fmtW(v) } }
+        y: { grid: { color: COLORS.border }, ticks: { color: COLORS.muted, font: { size: 11 }, callback: v => fmtW(v) },
+             title: { display: true, text: "Base Load", color: COLORS.muted, font: { size: 11 } } },
+        yTemp: { position: "right", grid: { drawOnChartArea: false },
+                 ticks: { color: COLORS.muted, font: { size: 11 }, callback: v => `${v}°C` },
+                 title: { display: true, text: "Temperature", color: COLORS.muted, font: { size: 11 } } }
       }
     }
   });
@@ -544,39 +612,57 @@ async function renderBase() {
     options: barOpts(v => fmtW(v), false)
   });
 
-  // Chart 3: Histogram for selected day (default today)
+  // Chart 3: Weekly histogram — pool all readings from the 7 days ending on selected date
   const baseDatePicker = $("base-date-picker");
   baseDatePicker.value = isoToday();
   baseDatePicker.max = isoToday();
 
-  async function loadHist(dateStr) {
+  async function loadWeekHist(anchorDate) {
     try {
-      const day = await loadDay(dateStr);
-      const { labels, data } = histogram(day.data_points);
-      // Find base load line position
-      const bl = baseLoad(day.data_points);
+      // Get 7 days ending on anchorDate
+      const weekDates = Array.from({length: 7}, (_, i) => addDays(anchorDate, -6 + i));
+      const weekDays = await loadManyDays(weekDates);
+
+      // Pool all readings from the week, excluding 00:00-06:00
+      const allPts = weekDates.flatMap(d => {
+        const day = weekDays[d];
+        if (!day) return [];
+        return (day.data_points || []).filter(p => {
+          const h = new Date(p.t).getUTCHours();
+          return h >= 6;
+        });
+      });
+
+      // Build histogram from pooled readings
+      const { labels, data } = histogram(allPts);
+      const bl = baseLoad(allPts);
+      const consVals = allPts.map(p => p.cons || 0).filter(v => v > 0);
+
+      const weekLabel = `${weekDates[0].slice(5)} → ${weekDates[6].slice(5)}`;
+
+      // Fetch weekly temperatures
+      const weekTemps = await fetchTemps(weekDates[0], weekDates[6]);
+      const avgTempMax  = weekDates.reduce((s,d) => s + (weekTemps[d]?.max  ?? 0), 0) / 7;
+      const avgTempMin  = weekDates.reduce((s,d) => s + (weekTemps[d]?.min  ?? 0), 0) / 7;
+      const avgTempMean = weekDates.reduce((s,d) => s + (weekTemps[d]?.mean ?? 0), 0) / 7;
+
       mkChart("chart-base-hist", {
         type: "bar",
         data: {
           labels,
-          datasets: [
-            { label: "Frequency", data, backgroundColor: COLORS.grid + "cc" },
-          ]
+          datasets: [{
+            label: `Readings (${weekLabel})`,
+            data,
+            backgroundColor: COLORS.grid + "cc",
+          }]
         },
         options: {
           responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
           plugins: {
+            legend: { display: true, labels: { color: COLORS.muted, font: { size: 12 } } },
             tooltip: {
               backgroundColor: "#0f1729", borderColor: COLORS.border, borderWidth: 1,
               callbacks: { label: ctx => ` ${ctx.parsed.y} readings` }
-            },
-            annotation: {
-              annotations: {
-                baseLine: {
-                  type: "line", xMin: 0, xMax: labels.length,
-                  yMin: 0, yMax: 0,
-                }
-              }
             }
           },
           scales: {
@@ -585,24 +671,27 @@ async function renderBase() {
           }
         }
       });
-      // Update base stats
+
+      // Stats for the week including temperature
       $("base-stats").innerHTML = [
         { label: "Base Load", val: fmtW(bl), color: COLORS.consumption },
-        { label: "Median Consumption", val: fmtW(percentile(day.data_points.map(p=>p.cons||0).filter(v=>v>0), 50)), color: COLORS.grid },
-        { label: "Peak Consumption", val: fmtW(Math.max(...day.data_points.map(p=>p.cons||0))), color: COLORS.solar },
-        { label: "Readings", val: `${day.data_points.length}`, color: COLORS.muted },
+        { label: "Median Consumption", val: fmtW(percentile(consVals, 50)), color: COLORS.grid },
+        { label: "Peak Consumption", val: fmtW(Math.max(...consVals)), color: COLORS.solar },
+        { label: "Avg Max Temp", val: `${avgTempMax.toFixed(1)}°C`, color: "#f97316" },
+        { label: "Avg Min Temp", val: `${avgTempMin.toFixed(1)}°C`, color: "#38bdf8" },
+        { label: "Total Readings", val: `${allPts.length}`, color: COLORS.muted },
       ].map(({ label, val, color }) => `
         <div class="month-total-card">
           <div class="label">${label}</div>
           <div class="val" style="color:${color};font-size:22px">${val}</div>
         </div>`).join("");
     } catch (e) {
-      console.error("Hist load failed", e);
+      console.error("Weekly hist failed", e);
     }
   }
 
-  await loadHist(isoToday());
-  $("base-date-load").addEventListener("click", () => loadHist(baseDatePicker.value));
+  await loadWeekHist(isoToday());
+  $("base-date-load").addEventListener("click", () => loadWeekHist(baseDatePicker.value));
 
   // Chart 4: Year-on-year base load by month
   mkChart("chart-base-yoy", {
