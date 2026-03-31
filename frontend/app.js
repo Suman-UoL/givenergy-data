@@ -523,13 +523,28 @@ async function renderBase() {
     }
   });
 
-  // Chart 1b: Weekly average base load year-on-year (smoothed)
+  // Chart 1b: Weekly base load year-on-year with temperature overlay
   function weekOfYear(iso) {
     const d = new Date(iso);
     const start = new Date(d.getFullYear(), 0, 1);
     return Math.floor((d - start) / (7 * 86400000));
   }
 
+  // Fetch temperatures for all years
+  const allTempData = {};
+  for (const year of years) {
+    const startIso = `${year}-01-01`;
+    const endIso = `${year}-12-31` <= isoToday() ? `${year}-12-31` : isoToday();
+    const temps = await fetchTemps(startIso, endIso);
+    Object.assign(allTempData, temps);
+  }
+
+  const doyLabels = Array.from({length: 52}, (_, i) => {
+    const d = new Date(2024, 0, 1 + i * 7);
+    return d.toLocaleDateString("en-GB", {month: "short", day: "numeric"});
+  });
+
+  // Base load datasets
   const doyDatasets = years.map(year => {
     const weekBuckets = Array.from({length: 52}, () => []);
     const yearDates = allDates.filter(d => d.startsWith(`${year}-`));
@@ -537,7 +552,6 @@ async function renderBase() {
       const wk = Math.min(51, weekOfYear(iso));
       if (dailyBase[iso]) weekBuckets[wk].push(dailyBase[iso]);
     }
-    // Weekly average then smooth with 3-week rolling average
     const weeklyAvg = weekBuckets.map(bucket =>
       bucket.length ? bucket.reduce((a, b) => a + b, 0) / bucket.length : null
     );
@@ -546,25 +560,48 @@ async function renderBase() {
       return slice.length ? slice.reduce((a,b) => a+b, 0) / slice.length : null;
     });
     return {
-      label: `${year}`,
+      label: `${year} base load`,
       data: smoothed,
       borderColor: yearColors[year],
-      backgroundColor: yearColors[year] + "22",
+      backgroundColor: "transparent",
       borderWidth: 2.5,
       pointRadius: 0,
       tension: 0.4,
       spanGaps: true,
+      yAxisID: "y",
     };
   });
 
-  const doyLabels = Array.from({length: 52}, (_, i) => {
-    const d = new Date(2024, 0, 1 + i * 7);
-    return d.toLocaleDateString("en-GB", {month: "short", day: "numeric"});
+  // Temperature datasets (weekly mean per year)
+  const tempAlpha = {2024:"99", 2025:"99", 2026:"99"};
+  const tempLineColors = {2024:"#f97316", 2025:"#fb923c", 2026:"#fdba74"};
+  const doyTempDatasets = years.map(year => {
+    const weekTempBuckets = Array.from({length: 52}, () => []);
+    const yearDates = allDates.filter(d => d.startsWith(`${year}-`));
+    for (const iso of yearDates) {
+      const wk = Math.min(51, weekOfYear(iso));
+      if (allTempData[iso]?.mean != null) weekTempBuckets[wk].push(allTempData[iso].mean);
+    }
+    const weeklyTemp = weekTempBuckets.map(bucket =>
+      bucket.length ? bucket.reduce((a,b) => a+b, 0) / bucket.length : null
+    );
+    return {
+      label: `${year} temp °C`,
+      data: weeklyTemp,
+      borderColor: tempLineColors[year],
+      backgroundColor: "transparent",
+      borderWidth: 1.5,
+      borderDash: [4, 3],
+      pointRadius: 0,
+      tension: 0.4,
+      spanGaps: true,
+      yAxisID: "yTemp",
+    };
   });
 
   mkChart("chart-base-doy", {
     type: "line",
-    data: { labels: doyLabels, datasets: doyDatasets },
+    data: { labels: doyLabels, datasets: [...doyDatasets, ...doyTempDatasets] },
     options: {
       responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
       interaction: { mode: "index", intersect: false },
@@ -572,12 +609,22 @@ async function renderBase() {
         legend: { display: true, labels: { color: COLORS.muted, font: { size: 12 } } },
         tooltip: {
           backgroundColor: "#0f1729", borderColor: COLORS.border, borderWidth: 1,
-          callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtW(ctx.parsed.y)}` }
+          callbacks: {
+            label: ctx => {
+              if (ctx.dataset.yAxisID === "yTemp") return ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}°C`;
+              return ` ${ctx.dataset.label}: ${fmtW(ctx.parsed.y)}`;
+            }
+          }
         }
       },
       scales: {
         x: { grid: { color: COLORS.border }, ticks: { color: COLORS.muted, font: { size: 11 }, maxTicksLimit: 12 } },
-        y: { grid: { color: COLORS.border }, ticks: { color: COLORS.muted, font: { size: 11 }, callback: v => fmtW(v) } }
+        y: { grid: { color: COLORS.border },
+             ticks: { color: COLORS.muted, font: { size: 11 }, callback: v => fmtW(v) },
+             title: { display: true, text: "Base Load", color: COLORS.muted, font: { size: 11 } } },
+        yTemp: { position: "right", grid: { drawOnChartArea: false },
+                 ticks: { color: "#f97316", font: { size: 11 }, callback: v => `${v}°C` },
+                 title: { display: true, text: "Temperature", color: "#f97316", font: { size: 11 } } }
       }
     }
   });
