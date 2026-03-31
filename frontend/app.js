@@ -572,13 +572,16 @@ async function renderBase() {
     };
   });
 
-  // Temperature datasets (weekly mean per year)
-  const tempAlpha = {2024:"99", 2025:"99", 2026:"99"};
+  // Temperature datasets (weekly mean per year) — iterate all days in year
   const tempLineColors = {2024:"#f97316", 2025:"#fb923c", 2026:"#fdba74"};
   const doyTempDatasets = years.map(year => {
     const weekTempBuckets = Array.from({length: 52}, () => []);
-    const yearDates = allDates.filter(d => d.startsWith(`${year}-`));
-    for (const iso of yearDates) {
+    // Iterate every day of the year, not just days with energy data
+    const daysInYear = year % 4 === 0 ? 366 : 365;
+    for (let d = 0; d < daysInYear; d++) {
+      const date = new Date(year, 0, 1 + d);
+      const iso = date.toISOString().slice(0, 10);
+      if (iso > isoToday()) continue;
       const wk = Math.min(51, weekOfYear(iso));
       if (allTempData[iso]?.mean != null) weekTempBuckets[wk].push(allTempData[iso].mean);
     }
