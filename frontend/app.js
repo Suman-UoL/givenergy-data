@@ -146,20 +146,7 @@ async function renderDay(dateStr){
     lineDs("Battery (±)",thinPts.map(p=>p.bat||0),COLORS.battery,true),
     lineDs("Grid (±)",thinPts.map(p=>p.grid||0),COLORS.grid,true),
   ]},options:lineOpts(v=>fmtW(v))});
-  const socPts=thinPts.filter(p=>p.soc!==null&&p.soc!==undefined);
-  mkChart("chart-soc",{type:"line",data:{labels:socPts.map(p=>shortTime(p.t)),datasets:[
-    lineDs("Battery %",socPts.map(p=>p.soc),COLORS.battery)
-  ]},options:lineOpts(v=>`${v.toFixed(0)}%`,0,100)});
-  const flows=day.energy_flows||[];
-  if(flows.length>0){
-    mkChart("chart-flows",{type:"bar",data:{labels:flows.map(f=>shortTime(f.t)),datasets:[
-      barDs("Solar→House",flows.map(f=>f.pv_h||0),COLORS.solar),
-      barDs("Grid→House",flows.map(f=>f.grid_h||0),COLORS.grid),
-      barDs("Bat→House",flows.map(f=>f.bat_h||0),COLORS.battery),
-      barDs("Exported",flows.map(f=>f.pv_g||0),COLORS.export,"b"),
-      barDs("Bat Charge",flows.map(f=>f.pv_b||0),COLORS.charge,"b"),
-    ]},options:barOpts(v=>`${v.toFixed(3)} kWh`)});
-  }
+
   showView("day");
 }
 
