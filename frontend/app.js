@@ -126,7 +126,7 @@ async function renderDay(dateStr){
   const totalConsumed=calcKwh(pts,"cons");
   const totalImported=calcKwhPos(pts,"grid");
   const totalExported=calcKwhNeg(pts,"grid");
-  const selfSuffPct=totalConsumed>0?Math.min(100,((totalConsumed-totalImported)/totalConsumed)*100):0;
+  const selfSuffPct=totalConsumed>0?Math.min(100,(totalSolar/totalConsumed)*100):0;
   let peakSolar=0,peakTime="";
   for(const p of pts){if((p.pv||0)>peakSolar){peakSolar=p.pv;peakTime=shortTime(p.t);}}
   setText("val-solar",fmtKwh(totalSolar));
@@ -172,7 +172,7 @@ async function renderWeek(anchorDate){
   const consumed=dates.map(d=>days[d]?calcKwh(days[d].data_points,"cons"):0);
   const imported=dates.map(d=>days[d]?calcKwhPos(days[d].data_points,"grid"):0);
   const exported=dates.map(d=>days[d]?calcKwhNeg(days[d].data_points,"grid"):0);
-  const selfSuff=dates.map((_,i)=>consumed[i]>0?Math.min(100,((consumed[i]-imported[i])/consumed[i])*100):0);
+  const selfSuff=dates.map((_,i)=>consumed[i]>0?Math.min(100,(solar[i]/consumed[i])*100):0);
   mkChart("chart-week",{type:"bar",data:{labels,datasets:[
     barDs("Solar",solar,COLORS.solar),
     barDs("Consumed",consumed,COLORS.consumption,"b"),
@@ -208,7 +208,7 @@ async function renderMonth(anchorDate){
   const tConsumed=consumed.reduce((a,b)=>a+b,0);
   const tExported=exported.reduce((a,b)=>a+b,0);
   const tImported=imported.reduce((a,b)=>a+b,0);
-  const selfSuff=tConsumed>0?((tConsumed-tImported)/tConsumed)*100:0;
+  const selfSuff=tConsumed>0?Math.min(100,(tSolar/tConsumed)*100):0;
   $("month-totals").innerHTML=[
     {label:"Solar Generated",val:fmtKwh(tSolar),color:COLORS.solar},
     {label:"Total Consumed",val:fmtKwh(tConsumed),color:COLORS.consumption},
@@ -294,7 +294,7 @@ async function renderYear(anchorDate){
       const k=`${year}-${pad(i+1)}`;
       const a=agg[k];
       if(!a||a.consumed===0)return 0;
-      return Math.min(100,((a.consumed-a.imported)/a.consumed)*100);
+      return Math.min(100,(a.solar/a.consumed)*100);
     }),
     backgroundColor:yearColors[year]+"cc",
   }))},options:barOpts(v=>`${v.toFixed(0)}%`,false,0,100)});
