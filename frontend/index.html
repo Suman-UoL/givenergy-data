@@ -43,14 +43,7 @@
         <div class="chart-header"><h2>Power over time</h2><div class="legend"><span class="leg solar">Solar</span><span class="leg consumption">Consumption</span><span class="leg battery">Battery (±)</span><span class="leg grid">Grid (±)</span></div></div>
         <div class="chart-wrap"><canvas id="chart-power"></canvas></div>
       </section>
-      <section class="chart-section">
-        <div class="chart-header"><h2>Battery state of charge</h2></div>
-        <div class="chart-wrap short"><canvas id="chart-soc"></canvas></div>
-      </section>
-      <section class="chart-section">
-        <div class="chart-header"><h2>Energy flows (30-min totals)</h2><div class="legend"><span class="leg solar">Solar→House</span><span class="leg grid">Grid→House</span><span class="leg battery">Bat→House</span><span class="leg export">Exported</span><span class="leg charge">Bat Charge</span></div></div>
-        <div class="chart-wrap"><canvas id="chart-flows"></canvas></div>
-      </section>
+
     </div>
     <div id="view-week" class="view hidden">
       <section class="chart-section"><div class="chart-header"><h2>Daily energy — last 7 days</h2></div><div class="chart-wrap"><canvas id="chart-week"></canvas></div></section>
@@ -82,6 +75,10 @@
       <section class="chart-section">
         <div class="chart-header"><h2>Base load year-on-year by month (W)</h2></div>
         <div class="chart-wrap"><canvas id="chart-base-yoy"></canvas></div>
+      </section>
+      <section class="chart-section">
+        <div class="chart-header"><h2>Self-sufficiency — year on year (%)</h2><span style="font-size:12px;color:var(--muted)">Weekly average solar / consumption</span></div>
+        <div class="chart-wrap"><canvas id="chart-self-yoy"></canvas></div>
       </section>
       <div class="month-totals" id="base-stats"></div>
     </div>

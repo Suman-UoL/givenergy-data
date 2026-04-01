@@ -744,6 +744,60 @@ async function renderBase() {
   $("base-date-load").addEventListener("click", () => loadWeekHist(baseDatePicker.value));
 
   // Chart 4: Year-on-year base load by month
+  // Self-sufficiency year-on-year chart
+  const selfYoyDatasets = years.map(year => {
+    const weekBuckets = Array.from({length: 52}, () => ({solar: 0, consumed: 0}));
+    const yearDates = allDates.filter(d => d.startsWith(`${year}-`));
+    for (const iso of yearDates) {
+      const day = allDays[iso];
+      if (!day) continue;
+      const pts = day.data_points || [];
+      if (pts.length < 2) continue;
+      const wk = Math.min(51, weekOfYear(iso));
+      weekBuckets[wk].solar += calcKwh(pts, "pv");
+      weekBuckets[wk].consumed += calcKwh(pts, "cons");
+    }
+    const weeklyData = weekBuckets.map(b =>
+      b.consumed > 0 ? Math.min(100, (b.solar / b.consumed) * 100) : null
+    );
+    // 3-week rolling smooth
+    const smoothed = weeklyData.map((_, i) => {
+      const slice = weeklyData.slice(Math.max(0, i-1), i+2).filter(v => v !== null);
+      return slice.length ? slice.reduce((a,b) => a+b, 0) / slice.length : null;
+    });
+    return {
+      label: `${year}`,
+      data: smoothed,
+      borderColor: yearColors[year],
+      backgroundColor: yearColors[year] + "22",
+      borderWidth: 2.5,
+      pointRadius: 0,
+      tension: 0.4,
+      spanGaps: true,
+    };
+  });
+
+  mkChart("chart-self-yoy", {
+    type: "line",
+    data: { labels: doyLabels, datasets: selfYoyDatasets },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: true, labels: { color: COLORS.muted, font: { size: 12 } } },
+        tooltip: {
+          backgroundColor: "#0f1729", borderColor: COLORS.border, borderWidth: 1,
+          callbacks: { label: ctx => ` ${ctx.dataset.label}: ${ctx.parsed.y?.toFixed(1)}%` }
+        }
+      },
+      scales: {
+        x: { grid: { color: COLORS.border }, ticks: { color: COLORS.muted, font: { size: 11 }, maxTicksLimit: 12 } },
+        y: { min: 0, max: 100, grid: { color: COLORS.border },
+             ticks: { color: COLORS.muted, font: { size: 11 }, callback: v => `${v}%` } }
+      }
+    }
+  });
+
   mkChart("chart-base-yoy", {
     type: "bar",
     data: {
