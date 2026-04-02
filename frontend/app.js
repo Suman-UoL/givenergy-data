@@ -540,7 +540,7 @@ async function renderBase() {
       if (dailyBase[iso]) weekBuckets[wk].push(dailyBase[iso]);
     }
     const weeklyAvg = weekBuckets.map(bucket =>
-      bucket.length ? bucket.reduce((a, b) => a + b, 0) / bucket.length : null
+      bucket.length >= 5 ? bucket.reduce((a, b) => a + b, 0) / bucket.length : null
     );
     const smoothed = weeklyAvg.map((_, i) => {
       const slice = weeklyAvg.slice(Math.max(0, i-1), i+2).filter(v => v !== null);
@@ -733,7 +733,7 @@ async function renderBase() {
   // Chart 4: Year-on-year base load by month
   // Self-sufficiency year-on-year chart
   const selfYoyDatasets = years.map(year => {
-    const weekBuckets = Array.from({length: 52}, () => ({solar: 0, consumed: 0}));
+    const weekBuckets = Array.from({length: 52}, () => ({solar: 0, consumed: 0, days: 0}));
     const yearDates = allDates.filter(d => d.startsWith(`${year}-`));
     for (const iso of yearDates) {
       const day = allDays[iso];
@@ -743,9 +743,10 @@ async function renderBase() {
       const wk = Math.min(51, weekOfYear(iso));
       weekBuckets[wk].solar += calcKwh(pts, "pv");
       weekBuckets[wk].consumed += calcKwh(pts, "cons");
+      weekBuckets[wk].days++;
     }
     const weeklyData = weekBuckets.map(b =>
-      b.consumed > 0 ? Math.min(100, (b.solar / b.consumed) * 100) : null
+      b.consumed > 0 && b.days >= 5 ? Math.min(100, (b.solar / b.consumed) * 100) : null
     );
     // 3-week rolling smooth
     const smoothed = weeklyData.map((_, i) => {
