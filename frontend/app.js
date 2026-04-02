@@ -511,10 +511,22 @@ async function renderBase() {
   });
 
   // Chart 1b: Weekly base load year-on-year with temperature overlay
+  function isoWeekKey(iso) {
+    // Returns "YYYY-WW" based on Monday-start ISO weeks
+    const d = new Date(iso);
+    const day = d.getUTCDay() || 7; // Mon=1, Sun=7
+    d.setUTCDate(d.getUTCDate() + 4 - day); // nearest Thursday
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const week = Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+    return `${d.getUTCFullYear()}-${String(week).padStart(2,'0')}`;
+  }
+
   function weekOfYear(iso) {
     const d = new Date(iso);
-    const start = new Date(d.getFullYear(), 0, 1);
-    return Math.floor((d - start) / (7 * 86400000));
+    const day = d.getUTCDay() || 7;
+    d.setUTCDate(d.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    return Math.ceil((((d - yearStart) / 86400000) + 1) / 7) - 1;
   }
 
   // Fetch temperatures for all years
@@ -533,14 +545,22 @@ async function renderBase() {
 
   // Base load datasets
   const doyDatasets = years.map(year => {
-    const weekBuckets = Array.from({length: 52}, () => []);
+    const weekMapBL = {};
     const yearDates = allDates.filter(d => d.startsWith(`${year}-`));
     for (const iso of yearDates) {
-      const wk = Math.min(51, weekOfYear(iso));
-      if (dailyBase[iso]) weekBuckets[wk].push(dailyBase[iso]);
+      if (!dailyBase[iso]) continue;
+      const wk = isoWeekKey(iso);
+      if (!weekMapBL[wk]) weekMapBL[wk] = [];
+      weekMapBL[wk].push(dailyBase[iso]);
+    }
+    const weekBuckets = Array.from({length: 52}, () => null);
+    for (const [wk, vals] of Object.entries(weekMapBL)) {
+      if (vals.length < 7) continue;
+      const wkNum = parseInt(wk.split('-')[1]) - 1;
+      if (wkNum >= 0 && wkNum < 52) weekBuckets[wkNum] = vals;
     }
     const weeklyAvg = weekBuckets.map(bucket =>
-      bucket.length >= 5 ? bucket.reduce((a, b) => a + b, 0) / bucket.length : null
+      bucket ? bucket.reduce((a, b) => a + b, 0) / bucket.length : null
     );
     const smoothed = weeklyAvg.map((_, i) => {
       const slice = weeklyAvg.slice(Math.max(0, i-1), i+2).filter(v => v !== null);
@@ -733,20 +753,27 @@ async function renderBase() {
   // Chart 4: Year-on-year base load by month
   // Self-sufficiency year-on-year chart
   const selfYoyDatasets = years.map(year => {
-    const weekBuckets = Array.from({length: 52}, () => ({solar: 0, consumed: 0, days: 0}));
+    const weekMapSS = {};
     const yearDates = allDates.filter(d => d.startsWith(`${year}-`));
     for (const iso of yearDates) {
       const day = allDays[iso];
       if (!day) continue;
       const pts = day.data_points || [];
       if (pts.length < 2) continue;
-      const wk = Math.min(51, weekOfYear(iso));
-      weekBuckets[wk].solar += calcKwh(pts, "pv");
-      weekBuckets[wk].consumed += calcKwh(pts, "cons");
-      weekBuckets[wk].days++;
+      const wk = isoWeekKey(iso);
+      if (!weekMapSS[wk]) weekMapSS[wk] = {solar: 0, consumed: 0, days: 0};
+      weekMapSS[wk].solar += calcKwh(pts, "pv");
+      weekMapSS[wk].consumed += calcKwh(pts, "cons");
+      weekMapSS[wk].days++;
     }
-    const weeklyData = weekBuckets.map(b =>
-      b.consumed > 0 && b.days >= 5 ? Math.min(100, (b.solar / b.consumed) * 100) : null
+    const ssBuckets = Array.from({length: 52}, () => null);
+    for (const [wk, b] of Object.entries(weekMapSS)) {
+      if (b.days < 7) continue;
+      const wkNum = parseInt(wk.split('-')[1]) - 1;
+      if (wkNum >= 0 && wkNum < 52) ssBuckets[wkNum] = b;
+    }
+    const weeklyData = ssBuckets.map(b =>
+      b && b.consumed > 0 ? Math.min(100, (b.solar / b.consumed) * 100) : null
     );
     // 3-week rolling smooth
     const smoothed = weeklyData.map((_, i) => {
