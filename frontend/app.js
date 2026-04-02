@@ -363,7 +363,7 @@ function histogram(pts, bins = 20) {
   }).map(p => p.cons || 0).filter(v => v >= 0);
   if (!cons.length) return { labels: [], data: [] };
   const min = 0;
-  const max = Math.min(Math.max(...cons), 2000); // cap at 2kW for readable histogram
+  const max = 1000; // cap at 1kW for better resolution
   const binSize = (max - min) / bins;
   const counts = Array(bins).fill(0);
   for (const v of cons) {
