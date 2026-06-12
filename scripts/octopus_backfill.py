@@ -15,7 +15,7 @@ API_KEY      = os.environ["OCTOPUS_API_KEY"]
 BASE         = "https://api.octopus.energy/v1"
 DATA_DIR     = Path(__file__).parent.parent / "data" / "octopus"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
-START_DATE   = date(2024, 11, 1)
+START_DATE   = date(2024, 4, 1)
 METER_CUTOVER = date(2026, 3, 23)
 
 
