@@ -49,16 +49,23 @@ def epoch(t):
     return datetime.fromisoformat(t.replace("Z", "+00:00")).timestamp()
 
 def fetch_battery_points(serial, date_str):
-    """Battery readings for the day as a time sorted list of (epoch, percent, power, inverter temp)."""
-    out = []
-    for p in get_all_pages(f"/inverter/{serial}/data-points/{date_str}"):
-        pwr = p.get("power") or {}
-        bat = pwr.get("battery") or {}
-        try: ts = epoch(p.get("time", ""))
-        except Exception: continue
-        out.append((ts, bat.get("percent"), bat.get("power"), (pwr.get("inverter") or {}).get("temperature")))
-    out.sort()
-    return out
+    """Battery readings for the day as a time sorted list of (epoch, percent, power, inverter temp).
+    The battery inverter splits its days on local time while the Gateway uses UTC, so for part of
+    the year the last hour of a UTC day sits in the next day's results. Read both days and merge."""
+    out = {}
+    nxt = (date.fromisoformat(date_str) + timedelta(days=1)).isoformat()
+    for d in (date_str, nxt):
+        try: raw = get_all_pages(f"/inverter/{serial}/data-points/{d}")
+        except Exception:
+            if d == date_str: raise
+            continue
+        for p in raw:
+            pwr = p.get("power") or {}
+            bat = pwr.get("battery") or {}
+            try: ts = epoch(p.get("time", ""))
+            except Exception: continue
+            out[ts] = (ts, bat.get("percent"), bat.get("power"), (pwr.get("inverter") or {}).get("temperature"))
+    return sorted(out.values())
 
 def nearest(bpts, keys, ts, tol=180):
     """Closest battery reading within tol seconds, else None."""
