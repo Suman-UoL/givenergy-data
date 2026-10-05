@@ -17,6 +17,7 @@
         <button class="tab" data-tab="week">Week</button>
         <button class="tab" data-tab="month">Month</button>
         <button class="tab" data-tab="year">Year</button>
+        <button class="tab" data-tab="summary">Summary</button>
         <button class="tab" data-tab="base">Base</button>
       </nav>
       <div class="date-nav">
@@ -101,6 +102,19 @@
       </section>
       <div class="month-totals" id="year-records"></div>
     </div>
+    <div id="view-summary" class="view hidden">
+      <section class="chart-section">
+        <div class="chart-header"><h2 id="sum-title">Annual summary</h2><select id="sum-period" class="sum-select"></select></div>
+        <div class="sum-sub" id="sum-sub"></div>
+        <div class="cards" id="sum-cards"></div>
+      </section>
+      <section class="chart-section">
+        <div class="chart-header"><h2>Month by month</h2></div>
+        <div class="table-wrap" id="sum-table"></div>
+      </section>
+      <div class="month-totals" id="sum-highlights"></div>
+      <p class="sum-note" id="sum-note"></p>
+    </div>
     <div id="view-month" class="view hidden">
       <section class="chart-section"><div class="chart-header"><h2>Daily energy — this month</h2></div><div class="chart-wrap"><canvas id="chart-month"></canvas></div></section>
       <div class="month-totals" id="month-totals"></div>
@@ -112,5 +126,6 @@
   </footer>
 </div>
 <script src="app.js"></script>
+<script src="summary.js"></script>
 </body>
 </html>
