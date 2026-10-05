@@ -1,56 +1,63 @@
 #!/usr/bin/env python3
-"""Read only diagnostic: shows what the GivEnergy API returns for battery data.
-Writes nothing. The inverter serial is masked because Actions logs are public."""
-import os, json, requests
+"""Read only diagnostic: lists the devices on the GivEnergy account and shows which
+one reports battery data. Writes nothing. Serials and identifying values are hidden
+because Actions logs are public."""
+import os, re, requests
 from datetime import date, timedelta
 
 KEY = os.environ["GIVENERGY_API_KEY"]
 BASE = "https://api.givenergy.cloud/v1"
 H = {"Authorization": f"Bearer {KEY}", "Accept": "application/json", "Content-Type": "application/json"}
 day = (date.today() - timedelta(days=1)).isoformat()
-SERIAL = ""
-
-def mask(s):
-    return s.replace(SERIAL, "SERIAL") if SERIAL else s
-
-def show(title, method, path, **kw):
-    print(f"\n=== {title}: {method} {mask(path)}")
-    try:
-        r = requests.request(method, BASE + path, headers=H, timeout=30, **kw)
-        print("HTTP", r.status_code)
-        print(mask(r.text[:700]))
-        return r
-    except Exception as e:
-        print("ERROR", type(e).__name__)
+HIDE = re.compile(r"serial|uuid|(^|_)id$|address|name|postcode|mac|(^|_)ip|lat|lon|email|phone|town|city|street", re.I)
 
 def shape(o, prefix=""):
     if isinstance(o, dict):
         for k, v in o.items():
-            shape(v, f"{prefix}.{k}" if prefix else k)
+            p = f"{prefix}.{k}" if prefix else k
+            if HIDE.search(k) and not isinstance(v, (dict, list)):
+                print(f"{p} = <hidden>")
+            else:
+                shape(v, p)
     elif isinstance(o, list):
         print(f"{prefix}: list of {len(o)}")
         if o: shape(o[0], prefix + "[0]")
     else:
         print(f"{prefix} = {o!r}")
 
-r = requests.get(f"{BASE}/communication-device", headers=H, params={"page": 1}, timeout=30)
-SERIAL = ((r.json().get("data") or [{}])[0].get("inverter") or {}).get("serial", "")
-print("Serial found:", bool(SERIAL), "| day tested:", day)
+def get(path, params=None):
+    return requests.get(BASE + path, headers=H, params=params, timeout=30)
 
-r = requests.get(f"{BASE}/inverter/{SERIAL}/data-points/{day}", headers=H, params={"page": 1, "pageSize": 3}, timeout=30)
-print("\n=== data points: HTTP", r.status_code)
-try:
-    pts = r.json().get("data", [])
-    print("points on first page:", len(pts))
-    if pts:
-        print("--- structure of first point (names and values) ---")
-        shape(pts[0])
-except Exception as e:
-    print("parse error", type(e).__name__)
+devices, page = [], 1
+while True:
+    r = get("/communication-device", {"page": page})
+    d = r.json()
+    devices += d.get("data", [])
+    if page >= d.get("meta", {}).get("last_page", 1): break
+    page += 1
+print("Communication devices on account:", len(devices))
+for i, dev in enumerate(devices, 1):
+    print(f"\n##### DEVICE {i}")
+    shape(dev)
 
-show("system data latest", "GET", f"/inverter/{SERIAL}/system-data/latest")
-show("energy flows as currently coded (GET)", "GET", f"/inverter/{SERIAL}/energy-flows/{day}",
-     params={"start_time": "00:00", "end_time": "23:59", "grouping": 30})
-show("energy flows (POST)", "POST", f"/inverter/{SERIAL}/energy-flows",
-     json={"start_time": day, "end_time": day, "grouping": 1, "types": [0, 1, 2, 3, 4, 5, 6]})
-show("daily totals as currently coded", "GET", f"/inverter/{SERIAL}/energy/{day}")
+serials = []
+for dev in devices:
+    s = (dev.get("inverter") or {}).get("serial")
+    if s and s not in serials: serials.append(s)
+print("\nDistinct inverter serials:", len(serials))
+
+for i, s in enumerate(serials, 1):
+    print(f"\n##### INVERTER {i}")
+    r = get(f"/inverter/{s}/system-data/latest")
+    j = (r.json() or {}).get("data") or {}
+    b = j.get("battery") or {}
+    print("latest: HTTP", r.status_code, "| status", j.get("status"), "| time", j.get("time"),
+          "| battery percent", b.get("percent"), "| battery power", b.get("power"),
+          "| solar", (j.get("solar") or {}).get("power"), "| grid", (j.get("grid") or {}).get("power"))
+    r = get(f"/inverter/{s}/data-points/{day}", {"page": 1, "pageSize": 200})
+    pts = (r.json() or {}).get("data") or []
+    bp = [p["power"]["battery"]["percent"] for p in pts if (p.get("power") or {}).get("battery", {}).get("percent") is not None]
+    bw = [p["power"]["battery"]["power"] for p in pts if (p.get("power") or {}).get("battery", {}).get("power") is not None]
+    print(f"data points {day}: HTTP {r.status_code}, {len(pts)} points, with battery percent {len(bp)}, with battery power {len(bw)}")
+    if bp: print("battery percent range:", min(bp), "to", max(bp))
+    if bw: print("battery power range:", min(bw), "to", max(bw))
