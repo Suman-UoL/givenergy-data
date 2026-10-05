@@ -1,62 +1,58 @@
 #!/usr/bin/env python3
-"""Read only diagnostic for the battery backfill. Writes nothing. Serials are never printed
-because Actions logs are public."""
-import os, requests
-from collections import Counter
-from datetime import date, timedelta
+"""Read only: compare the Gateway readings stored in the repo with the battery inverter's own
+solar, consumption and grid readings, on a sample of days. Writes nothing."""
+import sys, json
+from datetime import date, datetime, timedelta, timezone
+import fetch
 
-KEY = os.environ["GIVENERGY_API_KEY"]
-BASE = "https://api.givenergy.cloud/v1"
-H = {"Authorization": f"Bearer {KEY}", "Accept": "application/json", "Content-Type": "application/json"}
+def ep(t): return datetime.fromisoformat(t.replace("Z", "+00:00")).timestamp()
 
-def get(path, params=None):
-    return requests.get(BASE + path, headers=H, params=params, timeout=40)
+def kwh(series):
+    """series: time sorted (epoch, pv, cons, grid). Same gap rule as the dashboard (under 30 minutes)."""
+    s = dict(pv=0.0, cons=0.0, imp=0.0, exp=0.0)
+    for (t0, *_), (t1, pv, c, g) in zip(series, series[1:]):
+        dt = (t1 - t0) / 3600
+        if not (0 < dt < 0.5): continue
+        s["pv"] += abs(pv) * dt; s["cons"] += abs(c) * dt
+        if g > 0: s["imp"] += g * dt
+        elif g < 0: s["exp"] += -g * dt
+    return {k: v / 1000 for k, v in s.items()}
 
-devs, page = [], 1
-while True:
-    d = get("/communication-device", {"page": page}).json()
-    devs += d.get("data", [])
-    if page >= d.get("meta", {}).get("last_page", 1): break
-    page += 1
-inv = [x.get("inverter") or {} for x in devs]
-bat = next(i["serial"] for i in inv if i.get("serial") and (i.get("connections") or {}).get("batteries"))
-gw = next(i["serial"] for i in inv if i.get("serial") and i["serial"] != bat)
+def inverter_series(serial, day):
+    """Battery inverter readings for the UTC day (its days run on local time, so read two days)."""
+    lo = datetime.fromisoformat(day.isoformat()).replace(tzinfo=timezone.utc).timestamp()
+    out = {}
+    for d in (day, day + timedelta(days=1)):
+        try: raw = fetch.get_all_pages(f"/inverter/{serial}/data-points/{d.isoformat()}")
+        except Exception: continue
+        for p in raw:
+            pw = p.get("power") or {}
+            try: t = ep(p["time"])
+            except Exception: continue
+            if lo <= t < lo + 86400:
+                out[t] = (t, (pw.get("solar") or {}).get("power") or 0,
+                          (pw.get("consumption") or {}).get("power") or 0, (pw.get("grid") or {}).get("power") or 0)
+    return sorted(out.values())
 
-def pages(serial, day, size):
-    """Return (list of points, per page counts, meta of first page)."""
-    out, counts, page, meta0 = [], [], 1, None
-    while True:
-        j = get(f"/inverter/{serial}/data-points/{day}", {"page": page, "pageSize": size}).json()
-        meta0 = meta0 or j.get("meta")
-        b = j.get("data", [])
-        counts.append(len(b)); out += b
-        if not b or page >= j.get("meta", {}).get("last_page", 1): break
-        page += 1
-    return out, counts, meta0
+def gateway_series(day):
+    f = fetch.DATA_DIR / f"{day.isoformat()}.json"
+    if not f.exists(): return []
+    return [(ep(p["t"]), p["pv"] or 0, p["cons"] or 0, p["grid"] or 0) for p in json.loads(f.read_text()).get("data_points", [])]
 
-def hours(pts):
-    return Counter((p.get("time") or "")[11:13] for p in pts)
+def main():
+    _, bat = fetch.get_serials()
+    days, d = [], date(2024, 6, 20)
+    while d <= date(2026, 10, 3):
+        days.append(d); d += timedelta(days=30)
+    print("day        | solar kWh gw/inv | consumed gw/inv | import gw/inv | export gw/inv | inv readings")
+    tot = {k: [0.0, 0.0] for k in ("pv", "cons", "imp", "exp")}
+    for day in days:
+        g, i = gateway_series(day), inverter_series(bat, day)
+        if len(g) < 100 or len(i) < 100:
+            print(f"{day} | skipped (gateway {len(g)}, inverter {len(i)} readings)"); continue
+        a, b = kwh(g), kwh(i)
+        for k in tot: tot[k][0] += a[k]; tot[k][1] += b[k]
+        print(f"{day} | {a['pv']:6.1f} /{b['pv']:6.1f} | {a['cons']:6.1f} /{b['cons']:6.1f} | {a['imp']:6.1f} /{b['imp']:6.1f} | {a['exp']:6.1f} /{b['exp']:6.1f} | {len(i)}")
+    print("TOTAL gateway vs inverter:", {k: (round(v[0], 1), round(v[1], 1), round(v[1] / v[0], 2) if v[0] else None) for k, v in tot.items()})
 
-print("##### PAGING AND COVERAGE")
-for day in ((date.today() - timedelta(days=1)).isoformat(), (date.today() - timedelta(days=2)).isoformat()):
-    for size in (500, 200):
-        for label, s in (("gateway", gw), ("battery", bat)):
-            pts, counts, meta = pages(s, day, size)
-            ts = sorted(p.get("time", "") for p in pts)
-            m = {k: (meta or {}).get(k) for k in ("current_page", "last_page", "per_page", "total")}
-            print(f"{day} size {size} {label}: {len(pts)} points, pages {counts}, meta {m}, first {ts[0][11:19] if ts else None}, last {ts[-1][11:19] if ts else None}")
-    g, _, _ = pages(gw, day, 500); b, _, _ = pages(bat, day, 500)
-    hg, hb = hours(g), hours(b)
-    print(f"{day} points per UTC hour (gateway/battery):", " ".join(f"{h}:{hg.get(h,0)}/{hb.get(h,0)}" for h in sorted(set(hg) | set(hb))))
-
-print("\n##### EARLIEST BATTERY HISTORY (first of each month)")
-d = date(2023, 11, 1)
-while d <= date.today():
-    day = d.isoformat()
-    try:
-        pts, counts, _ = pages(bat, day, 500)
-        withb = sum(1 for p in pts if ((p.get("power") or {}).get("battery") or {}).get("percent") is not None)
-        print(f"{day}: {len(pts)} points, {withb} with battery percent")
-    except Exception as e:
-        print(f"{day}: error {type(e).__name__}")
-    d = date(d.year + (d.month == 12), d.month % 12 + 1, 1)
+main()
