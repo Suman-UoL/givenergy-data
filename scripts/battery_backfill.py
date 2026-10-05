@@ -12,7 +12,7 @@ def merge_day(path, battery_serial, force=False):
     pts = day.get("data_points", [])
     if not pts: return "empty"
     have = sum(1 for p in pts if p.get("soc") is not None)
-    if have >= 0.5 * len(pts) and not force: return "already done"
+    if have >= 0.9 * len(pts) and not force: return "already done"
     bpts = fetch.fetch_battery_points(battery_serial, path.stem)
     if not bpts: return "no battery data"
     keys = [b[0] for b in bpts]
