@@ -6,6 +6,8 @@ on:
     paths:
       - "frontend/**"
       - "data/**"
+  schedule:
+    - cron: "0 5 * * *"
   workflow_dispatch:
 
 permissions:
