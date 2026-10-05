@@ -27,19 +27,24 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install requests
-      - name: Add battery data to existing days
+      - name: Backfill in 45 day chunks, saving after each
         env:
           GIVENERGY_API_KEY: ${{ secrets.GIVENERGY_API_KEY }}
-        run: python scripts/battery_backfill.py ${{ inputs.start_date }} ${{ inputs.end_date }}
-      - name: Commit and push data
         run: |
           git config user.name "givenergy-bot"
           git config user.email "bot@givenergy-data"
-          git add data/
-          git stash
-          git pull --rebase
-          git stash pop
-          git add data/
-          git diff --cached --quiet && echo "No changes" || \
-            git commit -m "chore: battery backfill ${{ inputs.start_date }} to ${{ inputs.end_date }}" && \
-            git push
+          start="${{ inputs.start_date }}"; end="${{ inputs.end_date }}"
+          cur="$start"
+          while [ "$(date -d "$cur" +%s)" -le "$(date -d "$end" +%s)" ]; do
+            chunk_end=$(date -d "$cur + 44 days" +%F)
+            if [ "$(date -d "$chunk_end" +%s)" -gt "$(date -d "$end" +%s)" ]; then chunk_end="$end"; fi
+            echo "== $cur to $chunk_end"
+            python -u scripts/battery_backfill.py "$cur" "$chunk_end"
+            git add data/
+            if ! git diff --cached --quiet; then
+              git commit -m "chore: battery backfill $cur to $chunk_end"
+              git pull --rebase -q
+              git push -q
+            fi
+            cur=$(date -d "$chunk_end + 1 day" +%F)
+          done
