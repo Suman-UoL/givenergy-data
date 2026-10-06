@@ -18,6 +18,7 @@
         <button class="tab" data-tab="month">Month</button>
         <button class="tab" data-tab="year">Year</button>
         <button class="tab" data-tab="summary">Summary</button>
+        <button class="tab" data-tab="trends">Trends</button>
         <button class="tab" data-tab="base">Base</button>
       </nav>
       <div class="date-nav">
@@ -120,6 +121,14 @@
       <div class="month-totals" id="sum-highlights"></div>
       <p class="sum-note" id="sum-note"></p>
     </div>
+    <div id="view-trends" class="view hidden">
+      <section class="chart-section">
+        <div class="chart-header"><h2>Year on year trends</h2><select id="tr-mode" class="sum-select"><option value="monthly">Monthly totals</option><option value="cumulative">Cumulative</option></select></div>
+        <div class="sum-sub" id="tr-sub"></div>
+      </section>
+      <div id="tr-charts"></div>
+      <p class="sum-note" id="tr-note"></p>
+    </div>
     <div id="view-month" class="view hidden">
       <section class="chart-section"><div class="chart-header"><h2>Daily energy — this month</h2></div><div class="chart-wrap"><canvas id="chart-month"></canvas></div></section>
       <div class="month-totals" id="month-totals"></div>
@@ -133,5 +142,6 @@
 <script src="app.js"></script>
 <script src="summary.js"></script>
 <script src="day-battery.js"></script>
+<script src="trends.js"></script>
 </body>
 </html>
