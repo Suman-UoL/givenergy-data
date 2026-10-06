@@ -22,4 +22,6 @@
       if (section) section.style.display = "";
     } catch (e) { if (section) section.style.display = "none"; }
   };
+  // The first render of today starts before this script is loaded, so draw the Day tab again once.
+  if (typeof state !== "undefined" && state.tab === "day" && typeof render === "function") setTimeout(() => render(), 0);
 })();
