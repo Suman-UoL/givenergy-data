@@ -89,6 +89,7 @@
   }
 
   const api = { dayMetrics, aggregate, periods, dateRange, shiftYear, baseLoadOf, percentile };
+  if (typeof window !== "undefined") window.SummaryCalc = api;   // lets the Trends tab reuse the per day calculations
   if (typeof document === "undefined") { if (typeof module !== "undefined") module.exports = api; return; }
 
   // ── UI ───────────────────────────────────────────────────────────────────────
