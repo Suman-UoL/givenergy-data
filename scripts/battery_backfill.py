@@ -7,10 +7,38 @@ import fetch   # reuses the API helpers and matching rules from fetch.py
 
 DATA_DIR = fetch.DATA_DIR
 
+def fill_from_inverter(day_str, serial):
+    """Build readings for a UTC day from the battery inverter alone, for days the Gateway has none.
+    The inverter reports grid power with the opposite sign to the Gateway, so it is flipped here."""
+    lo = fetch.epoch(day_str + "T00:00:00Z")
+    out = {}
+    for d in (day_str, (date.fromisoformat(day_str) + timedelta(days=1)).isoformat()):
+        try: raw = fetch.get_all_pages(f"/inverter/{serial}/data-points/{d}")
+        except Exception:
+            if d == day_str: raise
+            continue
+        for p in raw:
+            try: t = fetch.epoch(p["time"])
+            except Exception: continue
+            if not (lo <= t < lo + 86400): continue
+            pw = p.get("power") or {}
+            bat = pw.get("battery") or {}
+            g = (pw.get("grid") or {}).get("power") or 0
+            out[t] = {"t": p["time"], "pv": (pw.get("solar") or {}).get("power") or 0,
+                      "cons": (pw.get("consumption") or {}).get("power") or 0, "bat": bat.get("power") or 0,
+                      "soc": bat.get("percent"), "grid": -g, "temp": (pw.get("inverter") or {}).get("temperature")}
+    return [out[t] for t in sorted(out)]
+
 def merge_day(path, battery_serial, force=False):
     day = json.loads(path.read_text())
     pts = day.get("data_points", [])
-    if not pts: return "empty"
+    if not pts:
+        pts = fill_from_inverter(path.stem, battery_serial)
+        if not pts: return "empty, no inverter data"
+        day["data_points"] = pts
+        day["source"] = "battery inverter (grid sign flipped)"
+        path.write_text(json.dumps(day, separators=(",", ":")))
+        return f"matched {len(pts)} of {len(pts)} (filled from inverter)"
     have = sum(1 for p in pts if p.get("soc") is not None)
     if have >= 0.9 * len(pts) and not force: return "already done"
     bpts = fetch.fetch_battery_points(battery_serial, path.stem)
