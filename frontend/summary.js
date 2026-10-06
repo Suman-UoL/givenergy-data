@@ -21,7 +21,8 @@
   function dayMetrics(day) {
     const pts = (day && day.data_points) || [];
     if (pts.length < 2) return null;
-    let solar = 0, cons = 0, imp = 0, exp = 0, car = 0, bat = 0, run = 0, runWh = 0;
+    let solar = 0, cons = 0, imp = 0, exp = 0, car = 0, bat = 0, batAll = 0, run = 0, runWh = 0;
+    const baseW = Math.min(600, Math.max(150, baseLoadOf(pts) || 300));   // house load to take off during car sessions
     const flush = () => { if (run >= CAR_MIN_H) car += runWh; run = 0; runWh = 0; };
     for (let i = 1; i < pts.length; i++) {
       const dt = (new Date(pts[i].t) - new Date(pts[i - 1].t)) / 3600000;
@@ -30,12 +31,16 @@
       solar += Math.abs(pts[i].pv || 0) * dt;
       cons += Math.abs(c) * dt;
       if (g > 0) imp += g * dt; else if (g < 0) exp += -g * dt;
-      if (Math.abs(c) >= CAR_W) { run += dt; runWh += Math.abs(c) * dt; } else flush();
-      if (g > BAT_W && g - c > BAT_W) bat += (g - c) * dt;
+      if (Math.abs(c) >= CAR_W) { run += dt; runWh += Math.max(0, Math.abs(c) - baseW) * dt; } else flush();
+      if (pts[i].soc != null) {   // measured battery power: negative means charging
+        const charge = Math.max(0, -(pts[i].bat || 0));
+        batAll += charge * dt;
+        bat += Math.min(charge, g > 0 ? Math.max(0, g - c) : 0) * dt;   // the part that came from the grid
+      } else if (g > BAT_W && g - c > BAT_W) { bat += (g - c) * dt; batAll += (g - c) * dt; }   // estimate where readings are missing
     }
     flush();
     return { solar: solar / 1000, cons: cons / 1000, imp: imp / 1000, exp: exp / 1000,
-             car: car / 1000, bat: bat / 1000, base: baseLoadOf(pts), n: pts.length, full: pts.length >= 100 };
+             car: car / 1000, bat: bat / 1000, batAll: batAll / 1000, base: baseLoadOf(pts), n: pts.length, full: pts.length >= 100 };
   }
 
   function addDaysIso(iso, n) { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); }
@@ -51,7 +56,7 @@
 
   function aggregate(range, metricsFor) {
     const dates = dateRange(range.start, range.end);
-    const A = { days: dates.length, withData: 0, tot: { solar: 0, cons: 0, imp: 0, exp: 0, car: 0, bat: 0, selfNum: 0 },
+    const A = { days: dates.length, withData: 0, tot: { solar: 0, cons: 0, imp: 0, exp: 0, car: 0, bat: 0, batAll: 0, selfNum: 0 },
                 bases: [], months: {}, best: { solar: null, cons: null, imp: null } };
     const newBucket = () => ({ solar: 0, cons: 0, imp: 0, exp: 0, selfNum: 0, bases: [], days: 0 });
     for (const d of dates) {
@@ -59,7 +64,7 @@
       if (!m) continue;
       if (m.full) A.withData++;
       const sn = Math.min(m.solar, m.cons);
-      for (const k of ["solar", "cons", "imp", "exp", "car", "bat"]) A.tot[k] += m[k];
+      for (const k of ["solar", "cons", "imp", "exp", "car", "bat", "batAll"]) A.tot[k] += m[k];
       A.tot.selfNum += sn;
       if (m.full && m.base > 0) A.bases.push(m.base);
       const key = d.slice(0, 7), b = A.months[key] || (A.months[key] = newBucket());
@@ -74,7 +79,7 @@
     }
     const t = A.tot;
     A.stat = {
-      solar: t.solar, cons: t.cons, imp: t.imp, exp: t.exp, car: t.car, bat: t.bat,
+      solar: t.solar, cons: t.cons, imp: t.imp, exp: t.exp, car: t.car, bat: t.bat, batAll: t.batAll,
       consExCar: t.cons - t.car, net: t.imp - t.exp,
       selfSuff: t.cons > 0 ? (t.selfNum / t.cons) * 100 : 0,
       selfCons: t.solar > 0 ? ((t.solar - t.exp) / t.solar) * 100 : 0,
@@ -131,7 +136,8 @@
       ["♻️", "Self consumption", `${f0(c.selfCons)}%`, c.selfCons, p && p.selfCons, "up", "pts"],
       ["📉", "Base load (median)", `${f0(c.base)} W`, c.base, p && p.base, "down"],
       ["🚗", "Car charging (est.)", kwh(c.car), c.car, p && p.car, null],
-      ["🔁", "Battery charged from grid (est.)", kwh(c.bat), c.bat, p && p.bat, null],
+      ["🔁", "Battery charged from grid", kwh(c.bat), c.bat, p && p.bat, null],
+      ["🔋", "Battery charged (total)", kwh(c.batAll), c.batAll, p && p.batAll, null],
     ];
     $s("sum-cards").innerHTML = defs.map(([icon, name, val, cv, pv, better, mode]) =>
       `<div class="card sum-card"><div class="card-top"><span class="card-icon">${icon}</span><span class="card-label">${name}</span></div>` +
@@ -199,7 +205,7 @@
     renderTable(cur, prev, canCompare, today);
     renderHighlights(cur);
     $s("sum-note").innerHTML = "Self sufficiency is the share of consumption met by same day solar, as on the other tabs. " +
-      "Car charging is estimated from sustained draws of 5 kW or more, and battery charging from grid import more than 1.5 kW above consumption. " +
+      "Car charging is estimated from sustained draws of 5 kW or more, less the day's base load. Battery charging uses the measured battery power, with an estimate from grid import only where readings are missing. " +
       "Muted figures in the table are the comparison period. First and last months may be part months.";
     if (state.tab === "summary") showView("summary");
   }
